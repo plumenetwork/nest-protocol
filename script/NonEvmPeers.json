@@ -1,0 +1,41 @@
+{
+    "dev-note": "One-to-one mapping with L0Config.json#Non-EVM",
+    "Peers": [
+        {
+            "symbol": "nTEST",
+            "addressBytes32": "0x6460ef525ccb765eb1b1959e824fa39624242666b9a9cb818d5abdaf3de3938c",
+            "oftStore": "7kqVy9Z6ejv4oEGddWSAezdLQdMmMQko626m7166kj39",
+            "eid": 30168
+        },
+        {
+            "symbol": "nBASIS",
+            "addressBytes32": "0x65506329235818f1c681f4492ca70f645aca6c9bc2c05d1eb7e2782d75f474a7",
+            "oftStore": "7pVGoXPJS7XpZnw2VJAExUgVGsK8C3v5aA7Hb7Pekh4J",
+            "eid": 30168
+        },
+        {
+            "symbol": "nALPHA",
+            "addressBytes32": "0x32fb72516c83d2f297f211dd2e4a898f4ead5271389b0ba706058f5c57cbb727",
+            "oftStore": "4S1mQ8SXKGd1G87mnWwGxtzqjEbXaiGHrmi8tVkjhPkJ",
+            "eid": 30168
+        },
+        {
+            "symbol": "nOPAL",
+            "addressBytes32": "0xdb735552be0fc4429c153de2e91965f798511e9f89660553a4396a72a5782586",
+            "oftStore": "FmeHf1FQJhXUWHVfLACCHJ8KvAJ7jpiDvukz8ZHP7XLq",
+            "eid": 30168
+        },
+        {
+            "symbol": "nTBILL",
+            "addressBytes32": "0x3dffc47c3faf5e4b049e2ac17f7884ec3a3fadd86faecaaf71f1bd88a0dc81b5",
+            "oftStore": "5B25A3r4yyN5iGi9PZEyte2ZyZEyx8CdASEX5GQErRSL",
+            "eid": 30168
+        },
+        {
+            "symbol": "nWISDOM",
+            "addressBytes32": "0x065277a59aa2f0f3d0fb92bc32f2e6bcef1cdfbb53ffce7141b6801fb15be29a",
+            "oftStore": "RgP5qMfX58PBLm6EoEgCfgfWxLdVBmGTm6bYnD3kECq",
+            "eid": 10109
+        }
+    ]
+}
