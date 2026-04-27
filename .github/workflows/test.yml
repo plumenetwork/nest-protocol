@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+      - run: pnpm install --frozen-lockfile
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+
+
+      - name: Show Forge version
+        run: |
+          forge --version
+
+      - name: Run Forge fmt
+        run: |
+          forge fmt --check
+        id: fmt
+
+      - name: Run Forge build
+        run: |
+          forge build contracts --sizes
+          forge build test
+        id: build
+
+      - name: Run Forge tests
+        env:
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+        run: |
+          forge test --mc AuthUpgradeable
+          forge test --fork-url $ETHEREUM_RPC_URL --mc '^Nest'
+          forge test --mc BoringVaultSY  -vv
+        id: test

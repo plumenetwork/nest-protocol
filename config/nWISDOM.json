@@ -1,0 +1,139 @@
+{
+  "contracts": [
+    {
+      "contract": {
+        "eid": 30370,
+        "contractName": "NestVaultOFT",
+        "address": "0x6330a14FC1520CFdF0834CCf23B15FD47a89a651"
+      }
+    },
+    {
+      "contract": {
+        "eid": 30168,
+        "address": "RgP5qMfX58PBLm6EoEgCfgfWxLdVBmGTm6bYnD3kECq"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "eid": 30370,
+        "contractName": "NestVaultOFT",
+        "address": "0x6330a14FC1520CFdF0834CCf23B15FD47a89a651"
+      },
+      "to": {
+        "eid": 30168,
+        "address": "RgP5qMfX58PBLm6EoEgCfgfWxLdVBmGTm6bYnD3kECq"
+      },
+      "config": {
+        "sendLibrary": "0xFe7C30860D01e28371D40434806F4A8fcDD3A098",
+        "receiveLibraryConfig": {
+          "receiveLibrary": "0x5B19bd330A84c049b62D5B0FC2bA120217a18C1C",
+          "gracePeriod": "0"
+        },
+        "sendConfig": {
+          "executorConfig": {
+            "maxMessageSize": 10000,
+            "executor": "0x41Bdb4aa4A63a5b2Efc531858d3118392B1A1C3d"
+          },
+          "ulnConfig": {
+            "confirmations": "10",
+            "requiredDVNs": [
+              "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+              "0x882a1ee8891c7d22310dedf032ef9653785532b8"
+            ],
+            "requiredDVNCount": 2,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "enforcedOptions": [
+          {
+            "msgType": 1,
+            "optionType": 1,
+            "gas": 200000
+          }
+        ],
+        "receiveConfig": {
+          "ulnConfig": {
+            "confirmations": "10",
+            "requiredDVNs": [
+              "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+              "0x882a1ee8891c7d22310dedf032ef9653785532b8"
+            ],
+            "requiredDVNCount": 2,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        }
+      }
+    },
+    {
+      "from": {
+        "eid": 30168,
+        "address": "RgP5qMfX58PBLm6EoEgCfgfWxLdVBmGTm6bYnD3kECq"
+      },
+      "to": {
+        "eid": 30370,
+        "contractName": "NestVaultOFT",
+        "address": "0x6330a14FC1520CFdF0834CCf23B15FD47a89a651"
+      },
+      "config": {
+        "sendLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
+        "receiveLibraryConfig": {
+          "receiveLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
+          "gracePeriod": "0"
+        },
+        "receiveConfig": {
+          "ulnConfig": {
+            "confirmations": "10",
+            "requiredDVNs": [
+              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
+              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab"
+            ],
+            "requiredDVNCount": 2,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "enforcedOptions": [
+          {
+            "msgType": 1,
+            "optionType": 1,
+            "gas": 100000,
+            "value": 0
+          },
+          {
+            "msgType": 2,
+            "optionType": 1,
+            "gas": 100000,
+            "value": 0
+          },
+          {
+            "msgType": 2,
+            "optionType": 3,
+            "index": 0,
+            "gas": 350000,
+            "value": 0
+          }
+        ],
+        "sendConfig": {
+          "executorConfig": {
+            "maxMessageSize": 10000,
+            "executor": "AwrbHeCyniXaQhiJZkLhgWdUCteeWSGaSN1sTfLiY7xK"
+          },
+          "ulnConfig": {
+            "confirmations": "10",
+            "requiredDVNs": [
+              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
+              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab"
+            ],
+            "requiredDVNCount": 2,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        }
+      }
+    }
+  ]
+}
