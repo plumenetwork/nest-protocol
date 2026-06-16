@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.30;
 
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {IERC7540Redeem} from "contracts/interfaces/IERC7540.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
@@ -66,19 +66,25 @@ interface INestVaultCore is IERC7540Redeem, IERC4626 {
     /// @param _accountant address rate provider address
     function setAccountant(address _accountant) external;
 
-    /// @notice Sets a fee for the given fee type
+    /// @notice Sets fee configuration (percentage rate + flat fee) for a fee type
     /// @param _f   Fee type identifier
-    /// @param _fee Fee value in ppm
-    function setFee(NestVaultCoreTypes.Fees _f, uint32 _fee) external;
+    /// @param _fee Fee configuration (rate in 1e6, flat in asset units)
+    function setFee(NestVaultCoreTypes.Fees _f, NestVaultCoreTypes.Fee calldata _fee) external;
+
+    /// @notice Sets the maximum fee cap configuration for a given fee type
+    /// @param _f      Fee type identifier
+    /// @param _maxFee Max fee configuration
+    function setMaxFee(NestVaultCoreTypes.Fees _f, NestVaultCoreTypes.Fee calldata _maxFee) external;
 
     /// @notice Enables or disables the usage of the external rate provider
     /// @param _set Boolean flag to toggle rate provider usage
     function setUseRateProvider(bool _set) external;
 
-    /// @notice Returns the configured fee for the given fee type
+    /// @notice Returns the fee configuration for the given fee type
     /// @param _f Fee type identifier
-    /// @return _fee Fee value in ppm
-    function fees(NestVaultCoreTypes.Fees _f) external view returns (uint32 _fee);
+    /// @return _rate Percentage fee rate (denominated in 1e6)
+    /// @return _flat Flat fee in asset token smallest units
+    function fees(NestVaultCoreTypes.Fees _f) external view returns (uint32 _rate, uint256 _flat);
 
     /// @notice Indicates whether the rate provider is currently used for conversions
     /// @return Boolean flag for rate provider usage
@@ -94,8 +100,9 @@ interface INestVaultCore is IERC7540Redeem, IERC4626 {
 
     /// @notice Maximum fee that can be applied for a given fee type
     /// @param _f Fee type identifier
-    /// @return Maximum fee value in ppm
-    function maxFees(NestVaultCoreTypes.Fees _f) external view returns (uint32);
+    /// @return _rate Max percentage fee rate
+    /// @return _flat Max flat fee amount
+    function maxFees(NestVaultCoreTypes.Fees _f) external view returns (uint32 _rate, uint256 _flat);
 
     /// @notice Total unclaimed fees for a given fee type denominated in vault assets
     /// @param _f NestVaultCoreTypes.Fees Fee type identifier
@@ -109,12 +116,18 @@ interface INestVaultCore is IERC7540Redeem, IERC4626 {
     function authorizations(address _controller, bytes32 _nonce) external view returns (bool);
 
     /// @notice Returns the accountant contract used to fetch conversion rates
-    /// @return NestAccountant instance
-    function accountant() external view returns (NestAccountant);
+    /// @return NestHubAccountant instance
+    function accountant() external view returns (NestHubAccountant);
 
     /// @notice Returns the configured management fee
     /// @return Management fee value in ppm
     function getManagementFee() external view returns (uint256);
+
+    /// @notice Preview the result of a fulfillRedeem operation
+    /// @param _shares          Number of shares to be fulfilled
+    /// @return _postFeeAmount  Assets that would be credited after fees
+    /// @return _feeAmount      Fee amount that would be deducted
+    function previewFulfillRedeem(uint256 _shares) external view returns (uint256 _postFeeAmount, uint256 _feeAmount);
 
     /// @notice Previews the result of an instant redemption of shares for assets
     /// @param _shares          Number of shares to redeem

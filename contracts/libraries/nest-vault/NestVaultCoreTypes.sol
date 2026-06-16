@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.30;
 
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {OperatorRegistry} from "contracts/operators/OperatorRegistry.sol";
 
 /// @title  NestVaultCoreTypes
@@ -23,7 +23,7 @@ library NestVaultCoreTypes {
         uint256 totalPendingShares;
         // This variable is used to determine the conversion rates between assets and shares, enabling accurate
         // calculation of deposits, withdrawals, and redemptions.
-        NestAccountant accountant;
+        NestHubAccountant accountant;
         // This mapping stores whether a given operator is authorized for a particular controller. It allows operators
         // to perform certain actions on behalf of the controller.
         mapping(address => mapping(address => bool)) isVaultOperator;
@@ -34,15 +34,12 @@ library NestVaultCoreTypes {
         // This mapping tracks the claimable amount of assets and shares for each controller once the redemption request
         // has been fulfilled.
         mapping(address => ClaimableRedeem) claimableRedeem;
-        /// The `maxFees` mapping associates each fee type in `Fees` with its corresponding maximum fee percentage.
-        /// For example, a value of 200000 represents a maximum fee of 20% (200000 / 1000000).
-        /// Authorized users can modify these maximum fees directly through this public mapping.
-        mapping(Fees => uint32) maxFees;
-        /// The `fees` mapping associates each fee type (Deposit, Redemption, InstantRedemption) with its corresponding fee percentage.
-        /// For example, a value of 5000 represents a 0.5% fee (5000 / 1000000).
-        ///  Authorized users can modify these fees directly through this public mapping.
-        mapping(Fees => uint32) fees;
-        // Tracks accrued and claimable assets per fee type.
+        /// Maximum fee configuration per fee type. The `rate` field caps the percentage fee (e.g. 200000 = 20%).
+        /// The `flat` field caps the flat fee (defaults to 0; must be raised before setting a non-zero flat fee).
+        mapping(Fees => Fee) maxFees;
+        /// Active fee configuration per fee type. The total fee charged is `flat + floor(gross * rate / 1e6)`.
+        mapping(Fees => Fee) fees;
+        /// Tracks accrued and claimable assets per fee type (includes both flat and percentage components).
         mapping(Fees => uint256) claimableFees;
         // The address of the operator registry contract, which manages operator authorizations
         OperatorRegistry operatorRegistry;
@@ -64,6 +61,30 @@ library NestVaultCoreTypes {
 
     // Configurable fees
     enum Fees {
-        InstantRedemption
+        InstantRedemption,
+        Deposit,
+        Redemption
     }
+
+    /// @notice Fee configuration combining percentage rate and flat fee
+    /// @dev    Total fee for an operation is `flat + floor(gross * rate / 1e6)`.
+    ///         Storage-compatible with the old `uint32` layout: `rate` occupies the same
+    ///         slot position as the former bare uint32 value; `flat` falls into a new slot
+    ///         that defaults to zero.
+    /// @param  rate uint32  Percentage fee rate (1e6 = 100%, e.g. 5000 = 0.5%)
+    /// @param  flat uint256 Flat fee in asset token smallest units (e.g. 100000 = $0.10 for 6-decimal USDC)
+    struct Fee {
+        uint32 rate;
+        uint256 flat;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev The percentage fee rate cap, denominated in 1e6. Maximum 20%.
+    uint32 internal constant FEE_CAP = 0.2e6;
+
+    /// @dev Maximum exchange rate allowed
+    uint256 internal constant UPPER_BOUND_RATE_CAP = 1e30;
 }

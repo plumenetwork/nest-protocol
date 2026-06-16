@@ -106,6 +106,24 @@ library Errors {
     /// @dev Error thrown when msg.value is non-zero in a local cross-chain operation
     error NonZeroMsgValueLocal(uint256 msgValue);
 
+    /// @dev Error thrown when attempting to set a performance fee greater than the permitted maximum (50%)
+    error PerformanceFeeTooLarge();
+
+    /// @dev Error thrown when attempting to set a hurdle rate greater than the permitted maximum (30%)
+    error HurdleRateTooLarge();
+
+    /// @dev Error thrown when attempting to set a holdback rate greater than 100%
+    error HoldbackRateTooLarge();
+
+    /// @dev Error thrown when attempting to set a crystallization window greater than the permitted maximum (365 days)
+    error CrystallizationWindowTooLarge();
+
+    /// @dev Error thrown when attempting to set epochs per window greater than the permitted maximum (52)
+    error EpochsPerWindowTooLarge();
+
+    /// @dev Error thrown when an update attempts to reapply the current value
+    error SameValue();
+
     /// @dev Error thrown when attempting to renounce ownership (disabled for upgradeable flow)
     error RenounceOwnershipDisabled();
 
@@ -114,4 +132,10 @@ library Errors {
 
     /// @dev Error thrown when operator registry does not implement IERC7540Operator.isOperator(address,address)
     error IncompatibleOperatorRegistry();
+
+    /// @dev Error thrown when keeper-supplied total share supply is below the local chain's totalSupply
+    error TotalSupplyBelowLocal();
+
+    /// @dev Error thrown when a fee-related function is called on a spoke accountant
+    error FeeAccrualDisabled();
 }

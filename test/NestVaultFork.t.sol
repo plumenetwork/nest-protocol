@@ -333,7 +333,9 @@ contract NestVaultForkTest is Events, Helper {
         vm.stopPrank();
 
         uint32 _instantRedemptionFee = 1e4; // 1%
-        NEST_VAULT.setFee(NestVaultCoreTypes.Fees.InstantRedemption, _instantRedemptionFee);
+        NEST_VAULT.setFee(
+            NestVaultCoreTypes.Fees.InstantRedemption, NestVaultCoreTypes.Fee({rate: _instantRedemptionFee, flat: 0})
+        );
         assertEq(_instantRedemptionFee, 1e4);
 
         // Expected pre-fee asset value of the shares
@@ -346,7 +348,6 @@ contract NestVaultForkTest is Events, Helper {
         // Capture balances before redeem
         uint256 receiverUSDCbefore = ERC20(USDC).balanceOf(ETHEREUM_USDC_WHALE);
         uint256 vaultUSDCbefore = ERC20(USDC).balanceOf(NALPHA);
-        uint256 feeVaultUSDCbefore = ERC20(USDC).balanceOf(address(NEST_VAULT));
         uint256 userSharesBefore = ERC20(address(NALPHA)).balanceOf(ETHEREUM_USDC_WHALE);
 
         // Expect InstantRedeem event
@@ -363,57 +364,59 @@ contract NestVaultForkTest is Events, Helper {
         assertEq(postFee, expectedPostFee);
         assertEq(feeAmount, expectedFee);
 
-        // Assertions on balances
+        // Assertions on balances — fee goes to share token, not vault
         assertEq(ERC20(USDC).balanceOf(ETHEREUM_USDC_WHALE), receiverUSDCbefore + expectedPostFee);
-        assertEq(ERC20(USDC).balanceOf(NALPHA), vaultUSDCbefore - expectedAssets);
-        assertEq(ERC20(USDC).balanceOf(address(NEST_VAULT)), feeVaultUSDCbefore + expectedFee);
+        assertEq(ERC20(USDC).balanceOf(NALPHA), vaultUSDCbefore - expectedAssets + expectedFee);
         assertEq(ERC20(address(NALPHA)).balanceOf(ETHEREUM_USDC_WHALE), userSharesBefore - mintedShares);
-        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.InstantRedemption), expectedFee);
+        // InstantRedemption fees go directly to share token, not accrued
+        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.InstantRedemption), 0);
     }
 
-    /// @dev should claim accrued instant redemption fees
+    /// @dev should claim accrued deposit fees via SHARE
     function testClaimFee() public {
         uint256 depositAmount = 10_000 * 10 ** ERC20(USDC).decimals();
 
         vm.startPrank(ETHEREUM_USDC_WHALE);
         ERC20(USDC).approve(address(NEST_VAULT), type(uint256).max);
-        uint256 mintedShares = NEST_VAULT.deposit(depositAmount, ETHEREUM_USDC_WHALE);
-        ERC20(address(NALPHA)).approve(address(NEST_VAULT), type(uint256).max);
+        NEST_VAULT.deposit(depositAmount, ETHEREUM_USDC_WHALE);
         vm.stopPrank();
 
-        uint32 instantRedemptionFee = 1e4; // 1%
-        NEST_VAULT.setFee(NestVaultCoreTypes.Fees.InstantRedemption, instantRedemptionFee);
+        uint32 depositFee = 1e4; // 1%
+        NEST_VAULT.setFee(NestVaultCoreTypes.Fees.Deposit, NestVaultCoreTypes.Fee({rate: depositFee, flat: 0}));
 
-        uint256 expectedAssets = NEST_VAULT.convertToAssets(mintedShares);
-        uint256 expectedFee = (expectedAssets * instantRedemptionFee) / 1_000_000;
+        // Deposit again with fee active
+        deal(USDC, ETHEREUM_USDC_WHALE, depositAmount);
+        vm.startPrank(ETHEREUM_USDC_WHALE);
+        ERC20(USDC).approve(address(NEST_VAULT), type(uint256).max);
+        NEST_VAULT.deposit(depositAmount, ETHEREUM_USDC_WHALE);
+        vm.stopPrank();
 
-        vm.prank(ETHEREUM_USDC_WHALE);
-        NEST_VAULT.instantRedeem(mintedShares, ETHEREUM_USDC_WHALE, ETHEREUM_USDC_WHALE);
+        uint256 expectedFee = (depositAmount * depositFee) / 1_000_000;
 
         address receiver = address(0xFEE);
         uint256 receiverUSDCbefore = ERC20(USDC).balanceOf(receiver);
-        uint256 feeVaultUSDCbefore = ERC20(USDC).balanceOf(address(NEST_VAULT));
-        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.InstantRedemption), expectedFee);
+        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.Deposit), expectedFee);
 
         vm.expectEmit(true, true, false, true);
-        emit FeeClaimed(NestVaultCoreTypes.Fees.InstantRedemption, receiver, expectedFee);
-        uint256 claimedFeeAmount = NEST_VAULT.claimFee(NestVaultCoreTypes.Fees.InstantRedemption, receiver);
+        emit FeeClaimed(NestVaultCoreTypes.Fees.Deposit, receiver, expectedFee);
+        vm.prank(NALPHA);
+        uint256 claimedFeeAmount = NEST_VAULT.claimFee(NestVaultCoreTypes.Fees.Deposit, receiver);
 
         assertEq(claimedFeeAmount, expectedFee);
-        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.InstantRedemption), 0);
+        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.Deposit), 0);
         assertEq(ERC20(USDC).balanceOf(receiver), receiverUSDCbefore + expectedFee);
-        assertEq(ERC20(USDC).balanceOf(address(NEST_VAULT)), feeVaultUSDCbefore - expectedFee);
     }
 
-    /// @dev revert claimFee when called by unauthorized caller
+    /// @dev revert claimFee when called by non-SHARE address
     function testRevertClaimFeeUnauthorizedCaller() public {
         vm.prank(address(1));
-        vm.expectRevert(AuthUpgradeable.AUTH_UNAUTHORIZED.selector);
+        vm.expectRevert(Errors.OnlyCallableByNestShare.selector);
         NEST_VAULT.claimFee(NestVaultCoreTypes.Fees.InstantRedemption, address(1));
     }
 
     /// @dev revert claimFee when no fees are owed
     function testRevertClaimFeeZeroFeesOwed() public {
+        vm.prank(NALPHA);
         vm.expectRevert(Errors.ZeroFeesOwed.selector);
         NEST_VAULT.claimFee(NestVaultCoreTypes.Fees.InstantRedemption, address(this));
     }
@@ -1550,7 +1553,9 @@ contract NestVaultForkTest is Events, Helper {
         ERC20(address(NALPHA)).approve(PERMIT2, type(uint256).max);
 
         uint32 _instantRedemptionFee = 1e4; // 1%
-        NEST_VAULT.setFee(NestVaultCoreTypes.Fees.InstantRedemption, _instantRedemptionFee);
+        NEST_VAULT.setFee(
+            NestVaultCoreTypes.Fees.InstantRedemption, NestVaultCoreTypes.Fee({rate: _instantRedemptionFee, flat: 0})
+        );
 
         // Expected pre-fee asset value of the shares
         uint256 expectedAssets = NEST_VAULT.convertToAssets(mintedShares);
@@ -1559,7 +1564,6 @@ contract NestVaultForkTest is Events, Helper {
 
         // Capture balances before redeem
         uint256 receiverUSDCbefore = ERC20(USDC).balanceOf(permit2User);
-        uint256 feeVaultUSDCbefore = ERC20(USDC).balanceOf(address(NEST_VAULT));
         uint256 userSharesBefore = ERC20(address(NALPHA)).balanceOf(permit2User);
 
         // Create permit for shares
@@ -1583,9 +1587,9 @@ contract NestVaultForkTest is Events, Helper {
 
         // Assertions on balances
         assertEq(ERC20(USDC).balanceOf(permit2User), receiverUSDCbefore + expectedPostFee);
-        assertEq(ERC20(USDC).balanceOf(address(NEST_VAULT)), feeVaultUSDCbefore + expectedFee);
         assertEq(ERC20(address(NALPHA)).balanceOf(permit2User), userSharesBefore - mintedShares);
-        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.InstantRedemption), expectedFee);
+        // InstantRedemption fees go directly to share token, not accrued
+        assertEq(NEST_VAULT.claimableFees(NestVaultCoreTypes.Fees.InstantRedemption), 0);
     }
 
     /// @dev instantRedeemWithPermit2 should work with authorized operator

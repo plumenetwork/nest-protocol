@@ -9,17 +9,18 @@ libs = [
 fs_permissions = [{ access = "read-write", path = "./"}]
 
 remappings = [
-     'forge-std/=node_modules/forge-std/src',
-     '@openzeppelin/=node_modules/@openzeppelin',
-     '@solmate/=node_modules/solmate/src',
-     '@boring-vault/=node_modules/boring-vault',
-     'src/=node_modules/boring-vault/src',
-     '@predicate/=node_modules/@predicate/contracts',
-     '@pendle/=node_modules/@pendle',
-     'createx/=node_modules/createx/src',
-     'solidity-bytes-utils/contracts/=node_modules/@layerzerolabs/toolbox-foundry/lib/solidity-bytes-utils/',
-     '@layerzerolabs/=node_modules/@layerzerolabs/',
-     '@uniswap/permit2/=node_modules/@uniswap/permit2/src/',
+    'forge-std/=node_modules/forge-std/src',
+    '@openzeppelin/=node_modules/@openzeppelin',
+    '@solmate/=node_modules/solmate/src',
+    '@boring-vault/=node_modules/boring-vault',
+    'src/=node_modules/boring-vault/src',
+    '@predicate/=node_modules/@predicate/contracts',
+    '@pendle/=node_modules/@pendle',
+    'createx/=node_modules/createx/src',
+    'solidity-bytes-utils/contracts/=node_modules/@layerzerolabs/toolbox-foundry/lib/solidity-bytes-utils/',
+    '@layerzerolabs/=node_modules/@layerzerolabs/',
+    '@uniswap/permit2/=node_modules/@uniswap/permit2/src/',
+    '@morpho/=node_modules/morpho/src/'
 ]
 
 via_ir = true
@@ -33,3 +34,6 @@ ethereum = "${ETHEREUM_RPC_URL}"
 hyperevm = "${HYPEREVM_RPC}"
 berachain = "${BERACHAIN_RPC}"
 bsc = "${BSC_RPC}"
+
+[lint]
+lint_on_build = false

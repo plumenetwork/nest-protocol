@@ -10,7 +10,7 @@ import {Upgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {NestVault} from "contracts/NestVault.sol";
 import {MockNestVault} from "test/mock/MockNestVault.sol";
 import {MockNestAccountant} from "test/mock/MockNestAccountant.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {Constants} from "script/Constants.sol";
 import {BoringVault} from "@boring-vault/src/base/BoringVault.sol";
 import {NestVaultPredicateProxy} from "contracts/NestVaultPredicateProxy.sol";
@@ -51,7 +51,9 @@ contract Helper is Constants, Test {
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     constructor() {
-        // deploy NestAccountant
+        vm.createSelectFork("ethereum");
+
+        // deploy NestHubAccountant
         Options memory _nestAccountantProxyOpts = Options({
             referenceContract: "",
             referenceBuildInfoDir: "",
@@ -79,7 +81,7 @@ contract Helper is Constants, Test {
             "MockNestAccountant.sol",
             address(this),
             abi.encodeCall(
-                NestAccountant.initialize,
+                NestHubAccountant.initialize,
                 (
                     IERC20(NALPHA).totalSupply(), // totalSharesLastUpdate
                     address(this), // payoutAddress
@@ -88,6 +90,11 @@ contract Helper is Constants, Test {
                     900000, // allowedExchangeRateChangeLower (90%)
                     3600, // minimumUpdateDelayInSeconds
                     uint32(10_000), // managementFee
+                    uint32(0), // performanceFee
+                    uint32(0), // hurdleRate
+                    uint32(0), // holdbackRate
+                    uint32(0), // crystallizationWindow
+                    uint32(0), // epochsPerWindow
                     address(this) // owner
                 )
             ),
@@ -221,10 +228,10 @@ contract Helper is Constants, Test {
         boringAuthority.setPublicCapability(address(NEST_VAULT), NEST_VAULT.redeem.selector, true);
         // Grant vault permission to update pending shares on accountant
         boringAuthority.setRoleCapability(
-            OWNER_ROLE, address(NEST_ACCOUNTANT), NestAccountant.increaseTotalPendingShares.selector, true
+            OWNER_ROLE, address(NEST_ACCOUNTANT), NestHubAccountant.increaseTotalPendingShares.selector, true
         );
         boringAuthority.setRoleCapability(
-            OWNER_ROLE, address(NEST_ACCOUNTANT), NestAccountant.decreaseTotalPendingShares.selector, true
+            OWNER_ROLE, address(NEST_ACCOUNTANT), NestHubAccountant.decreaseTotalPendingShares.selector, true
         );
         boringAuthority.setUserRole(address(NEST_VAULT), OWNER_ROLE, true);
         boringAuthority.setRoleCapability(

@@ -199,7 +199,6 @@ contract NestVaultRedeemOperatorTest is TestHelperOz5 {
     }
 
     function test_fulfillRedeem_oneShareMismatch_reverts() public {
-        uint256 originalOneShare = 10 ** uint256(share.decimals());
         _prepareRedeem(SHARES);
 
         MockNestShareOFTDecimals8 newImpl = new MockNestShareOFTDecimals8();
@@ -207,7 +206,6 @@ contract NestVaultRedeemOperatorTest is TestHelperOz5 {
         vm.prank(proxyAdmin);
         admin.upgradeAndCall(ITransparentUpgradeableProxy(address(share)), address(newImpl), "");
 
-        uint256 expectedOneShare = 10 ** uint256(share.decimals());
         vm.startPrank(controller);
         // Upgraded share implementation lacks exit logic; fulfillRedeem now reverts without data.
         vm.expectRevert();

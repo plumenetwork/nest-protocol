@@ -18,16 +18,19 @@ import {IERC7575Share} from "forge-std/interfaces/IERC7575.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {ITransferHook} from "contracts/interfaces/ITransferHook.sol";
 
 // libraries
 import {SafeTransferLib} from "@solmate/utils/SafeTransferLib.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /// @title  NestShareOFT – Cross-Chain Share Token for NestVault Assets
 /// @author plumenetwork
 /// @notice ERC-20 share token with LayerZero OFT support enabling cross-chain minting and burning of shares backed by vault assets.
 /// @dev    Implements upgradeable OFT, Auth, and IERC7575Share logic. Manages asset-to-share flows via authorized roles and maintains per-asset vault mappings.
-contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20PermitUpgradeable {
+contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20PermitUpgradeable, IERC1271 {
     using Address for address;
     using SafeTransferLib for ERC20;
 
@@ -36,7 +39,17 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
         mapping(address => address) vault;
         // responsible for implementing `beforeTransfer`.
         ITransferHook hook;
+        // authorized off-chain signer for EIP-1271 isValidSignature
+        address strategistSigner;
+        // contracts allowed to call isValidSignature (e.g. Permit2)
+        mapping(address => bool) signatureChecker;
     }
+
+    /// @dev Type hash used to wrap the input hash with this contract's EIP-712 domain
+    ///      before signature recovery. Binds signatures to (chainId, address(this)) so
+    ///      a signature valid against one NestShareOFT instance cannot be replayed against
+    ///      another instance that shares the same strategistSigner.
+    bytes32 private constant NEST_MESSAGE_TYPEHASH = keccak256("NestMessage(bytes32 hash)");
 
     // keccak256(abi.encode(uint256(keccak256("plumenetwork.storage.nestshare")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant NEST_SHARE_STORAGE_LOCATION =
@@ -73,6 +86,15 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
     /// @param  newSymbol  string The updated token symbol.
     /// @param  version    uint64 The consumed reinitializer version.
     event NameAndSymbolUpdated(string newName, string newSymbol, uint64 version);
+
+    /// @notice Emitted when the authorized off-chain strategist signer is updated.
+    /// @param  newSigner address The new strategist signer address.
+    event StrategistSignerUpdated(address indexed newSigner);
+
+    /// @notice Emitted when a contract's permission to call isValidSignature is updated.
+    /// @param  checker address The contract whose permission changed.
+    /// @param  allowed bool    True if allowed to call isValidSignature, false otherwise.
+    event SignatureCheckerUpdated(address indexed checker, bool allowed);
 
     /// @dev Constructor for the NestShare contract.
     /// @param _lzEndpoint address The LayerZero endpoint address.
@@ -254,16 +276,84 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
     }
 
     /*//////////////////////////////////////////////////////////////
+                    EIP-1271 LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the authorized off-chain signer for isValidSignature.
+    /// @return The strategist signer address (zero if unset).
+    function strategistSigner() external view returns (address) {
+        return _getNestShareOFTStorage().strategistSigner;
+    }
+
+    /// @notice Sets the authorized off-chain strategist signer.
+    /// @dev    Callable by authorized roles. Setting to address(0) disables EIP-1271 validation.
+    /// @param  _signer address The new strategist signer.
+    function setStrategistSigner(address _signer) external requiresAuth {
+        _getNestShareOFTStorage().strategistSigner = _signer;
+        emit StrategistSignerUpdated(_signer);
+    }
+
+    /// @notice Returns whether a caller is whitelisted to invoke isValidSignature.
+    /// @param  _caller address The caller to check.
+    /// @return         bool    True if whitelisted, false otherwise.
+    function isSignatureChecker(address _caller) external view returns (bool) {
+        return _getNestShareOFTStorage().signatureChecker[_caller];
+    }
+
+    /// @notice Updates the whitelist of contracts allowed to call isValidSignature.
+    /// @dev    Defense-in-depth: only whitelisted callers (e.g. Permit2) receive a positive
+    ///         response. Non-whitelisted callers always receive 0xffffffff regardless of the
+    ///         signature's validity.
+    /// @param  _checker address The contract whose permission to update.
+    /// @param  _allowed bool    True to whitelist, false to remove.
+    function setSignatureChecker(address _checker, bool _allowed) external requiresAuth {
+        _getNestShareOFTStorage().signatureChecker[_checker] = _allowed;
+        emit SignatureCheckerUpdated(_checker, _allowed);
+    }
+
+    /// @notice EIP-1271 signature validation entry point.
+    /// @dev    The input hash is wrapped with this contract's EIP-712 domain separator
+    ///         (which binds chainId + address(this)) before recovery. This prevents a
+    ///         signature valid against one NestShareOFT instance from being replayed
+    ///         against another instance that shares the same strategistSigner.
+    ///         Off-chain signers must therefore sign the wrapped digest:
+    ///             keccak256("\x19\x01" || domainSeparator || keccak256(NEST_MESSAGE_TYPEHASH || _hash))
+    ///         not the raw _hash.
+    /// @param  _hash      bytes32 The hash that the calling protocol intends to validate.
+    /// @param  _signature bytes   The off-chain signature over the wrapped digest.
+    /// @return            bytes4  0x1626ba7e on success, 0xffffffff otherwise.
+    function isValidSignature(bytes32 _hash, bytes memory _signature) external view override returns (bytes4) {
+        NestShareOFTStorage storage $ = _getNestShareOFTStorage();
+
+        // Defense-in-depth: only whitelisted callers (e.g. Permit2) get a positive response.
+        if (!$.signatureChecker[msg.sender]) return 0xffffffff;
+
+        address signer = $.strategistSigner;
+        if (signer == address(0)) return 0xffffffff;
+
+        // Bind the signature to this contract's EIP-712 domain (chainId, address(this)).
+        bytes32 wrapped =
+            MessageHashUtils.toTypedDataHash(_domainSeparatorV4(), keccak256(abi.encode(NEST_MESSAGE_TYPEHASH, _hash)));
+
+        (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(wrapped, _signature);
+        if (err == ECDSA.RecoverError.NoError && recovered == signer) {
+            return IERC1271.isValidSignature.selector;
+        }
+        return 0xffffffff;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                     INTERFACE SUPPORT LOGIC
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Checks if the contract supports a given interface
-    /// @dev    Supports IERC165, IERC7575Share, IERC20 and IOFT interfaces
+    /// @dev    Supports IERC165, IERC7575Share, IERC20, IOFT and IERC1271 interfaces
     /// @param  _interfaceId bytes4 The interface ID to check for support
     /// @return              bool   true if the contract supports the given interface ID, false otherwise
     function supportsInterface(bytes4 _interfaceId) public pure override returns (bool) {
         return _interfaceId == type(IERC7575Share).interfaceId || _interfaceId == type(IERC165).interfaceId
-            || _interfaceId == type(IOFT).interfaceId || _interfaceId == type(IERC20).interfaceId;
+            || _interfaceId == type(IOFT).interfaceId || _interfaceId == type(IERC20).interfaceId
+            || _interfaceId == type(IERC1271).interfaceId;
     }
 
     /*//////////////////////////////////////////////////////////////

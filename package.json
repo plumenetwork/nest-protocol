@@ -8,11 +8,16 @@
     "lint": "$npm_execpath run lint:js && $npm_execpath run lint:sol",
     "lint:fix": "eslint --fix '**/*.{js,ts,json}' && prettier --write . && solhint 'src/**/*.sol' --fix --noPrompt",
     "lint:js": "eslint '**/*.{js,ts,json}' && prettier --check .",
-    "lint:sol": "solhint 'src/**/*.sol'"
+    "lint:sol": "solhint 'src/**/*.sol'",
+    "bundle:increase-leverage": "$npm_execpath exec ts-node --transpile-only ts-scripts/morpho/buildIncreaseLeverageBundle.ts --config ts-scripts/morpho/fixtures/increase.sample.json",
+    "bundle:position": "$npm_execpath exec ts-node --transpile-only ts-scripts/morpho/buildPositionBundle.ts --config ts-scripts/morpho/fixtures/increase.sample.json",
+    "bundle:decrease-instant": "$npm_execpath exec ts-node --transpile-only ts-scripts/morpho/buildDecreaseLeverageInstantBundle.ts --config ts-scripts/morpho/fixtures/decrease-instant.sample.json",
+    "bundle:decrease-redeem": "$npm_execpath exec ts-node --transpile-only ts-scripts/morpho/buildDecreaseLeverageRedeemBundle.ts --config ts-scripts/morpho/fixtures/decrease-redeem.sample.json",
+    "bundle:validate-invariant": "$npm_execpath exec ts-node --transpile-only ts-scripts/morpho/validateInvariant.ts --config ts-scripts/morpho/fixtures/increase.sample.json"
   },
   "keywords": [],
   "author": "",
-  "license": "BUSL-1.1",
+  "license": "ISC",
   "packageManager": "pnpm@10.25.0",
   "dependencies": {
     "@layerzerolabs/lz-evm-messagelib-v2": "^3.0.86",
@@ -25,13 +30,18 @@
     "@openzeppelin/contracts": "^5.4.0",
     "@openzeppelin/contracts-upgradeable": "^5.4.0",
     "@openzeppelin/foundry-upgrades": "^0.4.0",
-    "@uniswap/permit2":"github:Uniswap/permit2",
+    "@uniswap/permit2": "github:Uniswap/permit2",
     "@pendle/core-v2": "6.2.2",
     "@predicate/contracts": "github:predicatelabs/predicate-contracts#v1.0.12",
     "boring-vault": "github:plumenetwork/nucleus-boring-vault#8c5baedd5db19dd1af269941958e712f283cfb9a",
     "createx": "github:pcaversaccio/createx#6d8817040de092a2cfc6342f9e587ee57b552b77",
     "forge-std": "github:foundry-rs/forge-std#17a9b2398a7d629931dc66a168a098d051d53dc6",
-    "solmate": "github:transmissions11/solmate#89365b880c4f3c786bdd453d4b8e8fe410344a69"
+    "solmate": "github:transmissions11/solmate#89365b880c4f3c786bdd453d4b8e8fe410344a69",
+    "morpho": "github:morpho-org/morpho-blue#57d444d9e243be21a80e8d4bf8794ebce4a089d9",
+    "@morpho-org/bundler-sdk-viem": "^3.3.0",
+    "@morpho-org/blue-sdk": "^4.9.1",
+    "@morpho-org/morpho-ts": "^2.4.1",
+    "viem": "^2.41.2"
   },
   "resolutions": {
     "@solana/web3.js": "^1.98.0",

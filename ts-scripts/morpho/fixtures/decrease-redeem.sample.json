@@ -1,0 +1,39 @@
+{
+  "addresses": {
+    "bundler": "0x000000000000000000000000000000000000b001",
+    "generalAdapter": "0x000000000000000000000000000000000000fa11",
+    "nestAdapter": "0x000000000000000000000000000000000000a11c",
+    "morpho": "0x000000000000000000000000000000000000b0b0",
+    "vault": "0x000000000000000000000000000000000000beef",
+    "initiator": "0x000000000000000000000000000000000000cafe",
+    "depositReceiver": "0x000000000000000000000000000000000000cafe",
+    "redeemReceiver": "0x000000000000000000000000000000000000cafe"
+  },
+  "marketParams": {
+    "loanToken": "0x0000000000000000000000000000000000001001",
+    "collateralToken": "0x0000000000000000000000000000000000002002",
+    "oracle": "0x0000000000000000000000000000000000003003",
+    "irm": "0x0000000000000000000000000000000000004004",
+    "lltv": "860000000000000000"
+  },
+  "currentPosition": {
+    "borrowShares": "100000000000000000000",
+    "collateral": "100000000000000000000"
+  },
+  "targetPosition": {
+    "borrowShares": "30000000000000000000",
+    "collateral": "30000000000000000000"
+  },
+  "marketState": {
+    "totalBorrowAssets": "1000000000000000000000000",
+    "totalBorrowShares": "1000000000000000000000000"
+  },
+  "extraInputs": {
+    "extraLoanAssets": "0",
+    "extraSharesSupplied": "0",
+    "tokenTransferredBackToUser": "0"
+  },
+  "collateralPrice": "1000000000000000000",
+  "oraclePriceScale": "1000000000000000000",
+  "maxRepaySharePriceE27": "0"
+}

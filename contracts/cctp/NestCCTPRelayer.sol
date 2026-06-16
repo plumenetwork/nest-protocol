@@ -89,7 +89,7 @@ contract NestCCTPRelayer is BaseCCTPRelayer, IOFT {
         _disableInitializers();
     }
 
-    /// @dev Internal function to access the contract's NestAccountant slot
+    /// @dev Internal function to access the contract's NestHubAccountant slot
     /// @return $ A reference to the NestCCTPRelayerStorage struct for reading/writing exchange rate
     function _getNestCCTPRelayerStorage() private pure returns (NestCCTPRelayerStorage storage $) {
         assembly {

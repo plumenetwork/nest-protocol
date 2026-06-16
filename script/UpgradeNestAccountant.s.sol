@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import "forge-std/Script.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 import {ITransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
@@ -13,9 +13,9 @@ interface IProxyAdmin {
 }
 
 /// @title  UpgradeNestAccountant
-/// @notice Script to upgrade NestAccountant implementations with pre-flight safety checks
+/// @notice Script to upgrade NestHubAccountant implementations with pre-flight safety checks
 /// @dev    Before upgrading, this script asserts that no vault has pending redemptions.
-///         This is critical because the new NestAccountant introduces a `totalPendingShares`
+///         This is critical because the new NestHubAccountant introduces a `totalPendingShares`
 ///         storage variable that starts at 0. If any vault already has pending shares,
 ///         subsequent `decreaseTotalPendingShares` calls (during fulfillRedeem/updateRedeem)
 ///         would revert with InsufficientBalance.
@@ -40,16 +40,16 @@ abstract contract UpgradeNestAccountant is Script {
                         CHAIN-SPECIFIC OVERRIDES
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev The NestAccountant proxy address to upgrade
+    /// @dev The NestHubAccountant proxy address to upgrade
     function _accountant() internal view virtual returns (address);
 
     /// @dev All NestVault proxy addresses associated with this accountant
     function _vaults() internal view virtual returns (address[] memory);
 
-    /// @dev The base asset address (immutable constructor arg for NestAccountant)
+    /// @dev The base asset address (immutable constructor arg for NestHubAccountant)
     function _asset() internal view virtual returns (address);
 
-    /// @dev The NestShareOFT address (immutable constructor arg for NestAccountant)
+    /// @dev The NestShareOFT address (immutable constructor arg for NestHubAccountant)
     function _share() internal view virtual returns (address payable);
 
     /*//////////////////////////////////////////////////////////////
@@ -66,16 +66,16 @@ abstract contract UpgradeNestAccountant is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        NestAccountant implementation = new NestAccountant(_asset(), _share());
-        console.log("NestAccountant implementation deployed at:", address(implementation));
+        NestHubAccountant implementation = new NestHubAccountant(_asset(), _share());
+        console.log("NestHubAccountant implementation deployed at:", address(implementation));
 
         IProxyAdmin(proxyAdmin).upgradeAndCall(ITransparentUpgradeableProxy(_accountant()), address(implementation), "");
-        console.log("NestAccountant proxy upgraded:", _accountant());
+        console.log("NestHubAccountant proxy upgraded:", _accountant());
 
         vm.stopBroadcast();
 
         // ==================== POST-UPGRADE SANITY ====================
-        NestAccountant accountant = NestAccountant(_accountant());
+        NestHubAccountant accountant = NestHubAccountant(_accountant());
         require(accountant.totalPendingShares() == 0, "totalPendingShares should be 0 after upgrade");
         console.log("Post-upgrade check passed: totalPendingShares == 0");
     }
@@ -85,7 +85,7 @@ abstract contract UpgradeNestAccountant is Script {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Reverts if any vault associated with this accountant has pending redemptions
-    /// @dev    Must be called BEFORE upgrading the NestAccountant. After the upgrade, the new
+    /// @dev    Must be called BEFORE upgrading the NestHubAccountant. After the upgrade, the new
     ///         `totalPendingShares` storage slot starts at 0. If vaults already have pending
     ///         shares, `decreaseTotalPendingShares` will underflow and revert.
     function _assertNoPendingRedemptions() internal view {

@@ -5,7 +5,7 @@ import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
 import {IERC7540Operator} from "contracts/interfaces/IERC7540.sol";
 import {OperatorRegistry} from "contracts/operators/OperatorRegistry.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {Errors} from "contracts/types/Errors.sol";
 
 /// @title  NestVaultCoreValidationLogic
@@ -226,7 +226,7 @@ library NestVaultCoreValidationLogic {
 
     /// @notice Validates candidate accountant compatibility
     /// @dev    Verifies the candidate is a contract and exposes `getRateInQuoteSafe(ERC20)`.
-    ///         A paused NestAccountant reverts `getRateInQuoteSafe` with `Errors.Paused()`,
+    ///         A paused NestHubAccountant reverts `getRateInQuoteSafe` with `Errors.Paused()`,
     ///         which is treated as a valid compatibility signal.
     /// @param  _accountant address Candidate accountant address
     /// @param  _asset      ERC20   Vault asset used to probe safe quote rates
@@ -244,7 +244,7 @@ library NestVaultCoreValidationLogic {
         // We verify the call returns at least 32 bytes (a valid uint256) to avoid false positives
         // from contracts with fallback functions that return empty data.
         (bool success, bytes memory returnData) =
-            _accountant.staticcall(abi.encodeWithSelector(NestAccountant.getRateInQuoteSafe.selector, _asset));
+            _accountant.staticcall(abi.encodeWithSelector(NestHubAccountant.getRateInQuoteSafe.selector, _asset));
         bool validResponse = success && returnData.length >= 32;
         bool revertedPaused = !success && returnData.length >= 4 && bytes4(returnData) == Errors.Paused.selector;
 
@@ -253,15 +253,33 @@ library NestVaultCoreValidationLogic {
         }
     }
 
-    /// @notice Validates fee-rate update for a given fee type
-    /// @param  _f   NestVaultCoreTypes.Fees                 Fee type
-    /// @param  _fee uint32                                  Candidate fee amount
-    function validateSetFee(NestVaultCoreTypes.NestVaultCoreStorage storage $, NestVaultCoreTypes.Fees _f, uint32 _fee)
-        external
-        view
-    {
-        uint256 maxFee = $.maxFees[_f];
-        if (_fee > maxFee) revert Errors.InvalidFee();
+    /// @notice Validates fee configuration update for a given fee type
+    /// @param  _f   NestVaultCoreTypes.Fees       Fee type
+    /// @param  _fee NestVaultCoreTypes.Fee   Candidate fee configuration
+    function validateSetFee(
+        NestVaultCoreTypes.NestVaultCoreStorage storage $,
+        NestVaultCoreTypes.Fees _f,
+        NestVaultCoreTypes.Fee calldata _fee
+    ) external view {
+        NestVaultCoreTypes.Fee storage maxFee = $.maxFees[_f];
+        if (_fee.rate > maxFee.rate) revert Errors.InvalidFee();
+        if (_fee.flat > maxFee.flat) revert Errors.InvalidFee();
+    }
+
+    /// @notice Validates max fee configuration update for a given fee type
+    /// @dev    Ensures the new max fee is not below the currently active fee for that type
+    /// @param  $       NestVaultCoreTypes.NestVaultCoreStorage The full storage struct
+    /// @param  _f      NestVaultCoreTypes.Fees                 Fee type
+    /// @param  _maxFee NestVaultCoreTypes.Fee             Candidate max fee configuration
+    function validateSetMaxFee(
+        NestVaultCoreTypes.NestVaultCoreStorage storage $,
+        NestVaultCoreTypes.Fees _f,
+        NestVaultCoreTypes.Fee calldata _maxFee
+    ) external view {
+        if (_maxFee.rate > NestVaultCoreTypes.FEE_CAP) revert Errors.InvalidFee();
+        NestVaultCoreTypes.Fee storage currentFee = $.fees[_f];
+        if (_maxFee.rate < currentFee.rate) revert Errors.InvalidFee();
+        if (_maxFee.flat < currentFee.flat) revert Errors.InvalidFee();
     }
 
     /// @notice Validates fee claim request for a fee type

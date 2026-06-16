@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {ERC20} from "@solmate/tokens/ERC20.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
 import {NestVaultCoreValidationLogic} from "contracts/libraries/nest-vault/NestVaultCoreValidationLogic.sol";
 import {NestVaultTransferLogic} from "contracts/libraries/nest-vault/NestVaultTransferLogic.sol";
@@ -20,11 +20,17 @@ library NestVaultAdminLogic {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev    Use this event to log changes in the fee amount for a particular fee type, including the fee type and the new fee amount
-    /// @param  f      NestVaultCoreTypes.Fees indexed for which the fee amount is being set
-    /// @param  oldFee uint32                  Previous fee for the specified fee type
-    /// @param  fee    uint32                  New fee amount for the specified fee type
-    event SetFee(NestVaultCoreTypes.Fees indexed f, uint32 oldFee, uint32 fee);
+    /// @dev    Emitted when the fee configuration for a fee type is updated
+    /// @param  f      NestVaultCoreTypes.Fees indexed fee type
+    /// @param  oldFee NestVaultCoreTypes.Fee    Previous fee configuration
+    /// @param  fee    NestVaultCoreTypes.Fee    New fee configuration
+    event SetFee(NestVaultCoreTypes.Fees indexed f, NestVaultCoreTypes.Fee oldFee, NestVaultCoreTypes.Fee fee);
+
+    /// @dev    Emitted when the maximum fee cap for a fee type is updated
+    /// @param  f         NestVaultCoreTypes.Fees indexed fee type
+    /// @param  oldMaxFee NestVaultCoreTypes.Fee    Previous max fee configuration
+    /// @param  maxFee    NestVaultCoreTypes.Fee    New max fee configuration
+    event SetMaxFee(NestVaultCoreTypes.Fees indexed f, NestVaultCoreTypes.Fee oldMaxFee, NestVaultCoreTypes.Fee maxFee);
 
     /// @notice Emitted when the operator registry address is updated.
     /// @param oldOperatorRegistry address The previous operator registry address.
@@ -70,24 +76,46 @@ library NestVaultAdminLogic {
         $.validateSetAccountant(_accountant, _asset);
 
         address _oldAccountant = address($.accountant);
-        $.accountant = NestAccountant(_accountant);
+        $.accountant = NestHubAccountant(_accountant);
 
         emit SetAccountant(_oldAccountant, _accountant);
     }
 
-    /// @notice Executes fee-rate update for a fee type
+    /// @notice Executes fee configuration update for a fee type
     /// @param  $    NestVaultCoreTypes.NestVaultCoreStorage The full storage struct
     /// @param  _f   NestVaultCoreTypes.Fees                 Fee type
-    /// @param  _fee uint32                                  Fee amount in 1e6 denominator
-    function executeSetFee(NestVaultCoreTypes.NestVaultCoreStorage storage $, NestVaultCoreTypes.Fees _f, uint32 _fee)
-        external
-    {
+    /// @param  _fee NestVaultCoreTypes.Fee             New fee configuration (rate + flat)
+    function executeSetFee(
+        NestVaultCoreTypes.NestVaultCoreStorage storage $,
+        NestVaultCoreTypes.Fees _f,
+        NestVaultCoreTypes.Fee calldata _fee
+    ) external {
         $.validateSetFee(_f, _fee);
 
-        uint32 _oldFee = $.fees[_f];
-        $.fees[_f] = _fee;
+        NestVaultCoreTypes.Fee memory _oldFee = NestVaultCoreTypes.Fee({rate: $.fees[_f].rate, flat: $.fees[_f].flat});
+        $.fees[_f].rate = _fee.rate;
+        $.fees[_f].flat = _fee.flat;
 
         emit SetFee(_f, _oldFee, _fee);
+    }
+
+    /// @notice Executes max fee configuration update for a fee type
+    /// @param  $       NestVaultCoreTypes.NestVaultCoreStorage The full storage struct
+    /// @param  _f      NestVaultCoreTypes.Fees                 Fee type
+    /// @param  _maxFee NestVaultCoreTypes.Fee             New max fee configuration (rate + flat)
+    function executeSetMaxFee(
+        NestVaultCoreTypes.NestVaultCoreStorage storage $,
+        NestVaultCoreTypes.Fees _f,
+        NestVaultCoreTypes.Fee calldata _maxFee
+    ) external {
+        $.validateSetMaxFee(_f, _maxFee);
+
+        NestVaultCoreTypes.Fee memory _oldMaxFee =
+            NestVaultCoreTypes.Fee({rate: $.maxFees[_f].rate, flat: $.maxFees[_f].flat});
+        $.maxFees[_f].rate = _maxFee.rate;
+        $.maxFees[_f].flat = _maxFee.flat;
+
+        emit SetMaxFee(_f, _oldMaxFee, _maxFee);
     }
 
     /// @notice Claims accrued fees for a given fee type to a receiver

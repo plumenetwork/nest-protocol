@@ -10,7 +10,7 @@ import {NestVaultAccountingLogic} from "contracts/libraries/nest-vault/NestVault
 import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
 import {NestVaultTransferLogic} from "contracts/libraries/nest-vault/NestVaultTransferLogic.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 
 /// @title  NestVaultRedeemLogic
 /// @notice Library containing redeem-related logic for NestVaultCore
@@ -94,7 +94,7 @@ library NestVaultRedeemLogic {
         uint256 _currentPendingShares = $.pendingRedeem[_controller].shares;
         $.pendingRedeem[_controller].shares = _shares + _currentPendingShares;
         $.totalPendingShares = $.totalPendingShares + _shares;
-        _tryUpdateTotalPendingShares($.accountant, NestAccountant.increaseTotalPendingShares.selector, _shares);
+        _tryUpdateTotalPendingShares($.accountant, NestHubAccountant.increaseTotalPendingShares.selector, _shares);
 
         emit RedeemRequest(_controller, _owner, 0, _caller, _shares);
 
@@ -118,22 +118,40 @@ library NestVaultRedeemLogic {
         uint256 _rate
     ) external returns (uint256 _assets) {
         // Calculate assets
-        _assets = _shares.convertToAssets(_rate, shareToken, Math.Rounding.Floor);
+        uint256 _grossAssets = _shares.convertToAssets(_rate, shareToken, Math.Rounding.Floor);
 
         // Validate
-        $.validateFulfillRedeem(_controller, _shares, _assets);
+        $.validateFulfillRedeem(_controller, _shares, _grossAssets);
 
         // Execute exit and get actual transfer amount
-        uint256 _amountReceived = shareToken.safeExit(assetToken, address(this), _assets, _shares);
+        uint256 _amountReceived = shareToken.safeExit(assetToken, address(this), _grossAssets, _shares);
+
+        // Apply redemption fee (flat + percentage)
+        NestVaultCoreTypes.Fee storage _feeConfig = $.fees[NestVaultCoreTypes.Fees.Redemption];
+        (uint256 _netReceived, uint256 _feeAmount) =
+            _amountReceived.calculatePostFeeAmounts(_feeConfig.rate, _feeConfig.flat);
+        if (_netReceived == 0) revert Errors.ZeroAssets();
+        if (
+            _feeConfig.flat > 0
+                && _feeConfig.flat.mulDivDown(NestVaultAccountingLogic.FEE_DENOMINATOR, _amountReceived)
+                    > NestVaultCoreTypes.FEE_CAP
+        ) {
+            revert Errors.InvalidFee();
+        }
+        if (_feeAmount > 0) {
+            $.claimableFees[NestVaultCoreTypes.Fees.Redemption] += _feeAmount;
+        }
 
         // Update state
         $.pendingRedeem[_controller].shares -= _shares;
         $.totalPendingShares = $.totalPendingShares - _shares;
-        $.claimableRedeem[_controller].assets += _amountReceived;
+        $.claimableRedeem[_controller].assets += _netReceived;
         $.claimableRedeem[_controller].shares += _shares;
-        _tryUpdateTotalPendingShares($.accountant, NestAccountant.decreaseTotalPendingShares.selector, _shares);
+        _tryUpdateTotalPendingShares($.accountant, NestHubAccountant.decreaseTotalPendingShares.selector, _shares);
 
-        emit RedeemFulfilled(_controller, _shares, _assets, _amountReceived);
+        emit RedeemFulfilled(_controller, _shares, _grossAssets, _netReceived);
+
+        _assets = _netReceived;
     }
 
     /// @notice Executes the instant redeem logic including validation, share transfer, and exit
@@ -160,10 +178,10 @@ library NestVaultRedeemLogic {
         // Validate authorization and shares
         $.validateInstantRedeem(_shares, _receiver, _owner, _caller, ERC20(address(shareToken)));
 
-        // Calculate assets and fees
+        // Calculate assets and fees (flat + percentage)
         uint256 _assets = _shares.convertToAssets(_rate, shareToken, Math.Rounding.Floor);
-        uint32 _feeRate = $.fees[NestVaultCoreTypes.Fees.InstantRedemption];
-        (uint256 expectedPostFeeAmount,) = _assets.calculatePostFeeAmounts(_feeRate);
+        NestVaultCoreTypes.Fee storage _feeConfig = $.fees[NestVaultCoreTypes.Fees.InstantRedemption];
+        (uint256 expectedPostFeeAmount,) = _assets.calculatePostFeeAmounts(_feeConfig.rate, _feeConfig.flat);
 
         if (expectedPostFeeAmount == 0) revert Errors.ZeroAssets();
         uint256 amountReceived = shareToken.safeExit(assetToken, address(this), _assets, _shares);
@@ -172,7 +190,10 @@ library NestVaultRedeemLogic {
 
         _feeAmount = amountReceived - _postFeeAmount;
 
-        $.claimableFees[NestVaultCoreTypes.Fees.InstantRedemption] += _feeAmount;
+        // Transfer instant redemption fees directly to the share token (benefits holders via exchange rate)
+        if (_feeAmount > 0) {
+            assetToken.safeTransferFrom(address(this), address(shareToken), _feeAmount);
+        }
 
         emit InstantRedeem(_shares, _assets, _postFeeAmount, _receiver);
 
@@ -206,7 +227,7 @@ library NestVaultRedeemLogic {
         uint256 _returnAmount = _oldShares - _newShares;
         $.totalPendingShares = $.totalPendingShares - _returnAmount;
         $.pendingRedeem[_controller].shares = _newShares;
-        _tryUpdateTotalPendingShares($.accountant, NestAccountant.decreaseTotalPendingShares.selector, _returnAmount);
+        _tryUpdateTotalPendingShares($.accountant, NestHubAccountant.decreaseTotalPendingShares.selector, _returnAmount);
 
         shareToken.safeTransferFrom(address(this), _receiver, _returnAmount);
 
@@ -293,10 +314,10 @@ library NestVaultRedeemLogic {
     /// @dev Sync global pending shares while preserving legacy compatibility.
     ///      If selector is missing (legacy accountant), revert data is empty and sync is skipped.
     ///      If selector exists and call reverts with data, revert is bubbled.
-    /// @param accountant NestAccountant Accountant instance to notify
+    /// @param accountant NestHubAccountant Accountant instance to notify
     /// @param _selector  bytes4         Selector for pending-share sync method
     /// @param _amount    uint256        Pending share delta to apply
-    function _tryUpdateTotalPendingShares(NestAccountant accountant, bytes4 _selector, uint256 _amount) internal {
+    function _tryUpdateTotalPendingShares(NestHubAccountant accountant, bytes4 _selector, uint256 _amount) internal {
         (bool _success, bytes memory _reason) = address(accountant).call(abi.encodeWithSelector(_selector, _amount));
         if (_success || _reason.length == 0) return;
 

@@ -1,0 +1,33 @@
+{
+  "rpcUrl": "https://rpc.plume.org",
+  "expectedMarketId": "0x7a96549cae736c913d12c78ee4c155c2d2f874031fce5acdd07bdbf23d7644c7",
+  "addresses": {
+    "bundler": "0x5437C8788f4CFbaA55be6FBf30379bc7dd7f69C3",
+    "generalAdapter": "0x65ff368930Cb7eB4CA5C5eBC58bb69E6Ed198BA5",
+    "nestAdapter": "0x0000000000000000000000000000000000000000",
+    "morpho": "0x42b18785CE0Aed7BF7Ca43a39471ED4C0A3e0bB5",
+    "vault": "0x0000000000000000000000000000000000000000",
+    "initiator": "0x000000000000000000000000000000000000cafe",
+    "depositReceiver": "0x000000000000000000000000000000000000cafe",
+    "redeemReceiver": "0x000000000000000000000000000000000000cafe"
+  },
+  "marketParams": {
+    "loanToken": "0xdddD73F5Df1F0DC31373357beAC77545dC5A6f3F",
+    "collateralToken": "0x593cCcA4c4bf58b7526a4C164cEEf4003C6388db",
+    "oracle": "0x7824e4B3E21678f143Ce22308ADfd48d1D3160FB",
+    "irm": "0x7420302Ddd469031Cd2282cd64225cCd46F581eA",
+    "lltv": "860000000000000000"
+  },
+  "targetPosition": {
+    "borrowShares": "100000000000000000000",
+    "collateral": "100000000000000000000"
+  },
+  "extraInputs": {
+    "extraLoanAssets": "1000000",
+    "extraSharesSupplied": "0",
+    "tokenTransferredBackToUser": "0"
+  },
+  "collateralPrice": "1000000000000000000",
+  "oraclePriceScale": "1000000000000000000",
+  "minBorrowSharePriceE27": "0"
+}

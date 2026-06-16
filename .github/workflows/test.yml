@@ -27,9 +27,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
-
-
       - name: Show Forge version
         run: |
           forge --version
@@ -41,15 +38,20 @@ jobs:
 
       - name: Run Forge build
         run: |
-          forge build contracts --sizes
+          forge build contracts --sizes --skip contracts/operators/old/*
           forge build test
         id: build
 
-      - name: Run Forge tests
-        env:
-          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+      - name: Run Forge unit tests
         run: |
           forge test --mc AuthUpgradeable
-          forge test --fork-url $ETHEREUM_RPC_URL --mc '^Nest'
-          forge test --mc BoringVaultSY  -vv
-        id: test
+        id: unit-test
+
+      - name: Run Forge fork tests
+        env:
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+          PLUME_RPC_URL: ${{ secrets.PLUME_RPC_URL }}
+        run: |
+          forge test --fork-url $PLUME_RPC_URL --mc '^Nest'
+          forge test --fork-url $PLUME_RPC_URL --mc BoringVaultSY -vv
+        id: fork-test

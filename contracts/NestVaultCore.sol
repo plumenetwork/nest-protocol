@@ -13,7 +13,7 @@ import {
     ReentrancyGuardTransientUpgradeable
 } from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardTransientUpgradeable.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
 import {OperatorRegistry} from "contracts/operators/OperatorRegistry.sol";
 
@@ -74,12 +74,6 @@ abstract contract NestVaultCore is
     /// @dev This is an immutable variable that stores the address of the share token to honour ERC7575 specs
     NestShareOFT internal immutable SHARE;
 
-    /// @dev    the fee is denominated in basis points described by 1e6
-    uint32 internal constant FEE_CAP = 0.2e6; // 20%
-
-    /// @dev maximum exchange rate allowed
-    uint256 internal constant UPPER_BOUND_RATE_CAP = 1e30;
-
     // keccak256(abi.encode(uint256(keccak256("plumenetwork.storage.NestVaultCore")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant NestVaultCoreStorageLocation =
         0x8d327cc9157d67bbcdfb7458a8210f70aaa0f2cbd2dc6f3d23140e557560c200;
@@ -94,7 +88,7 @@ abstract contract NestVaultCore is
         _disableInitializers();
     }
 
-    /// @dev Internal function to access the contract's NestAccountant slot
+    /// @dev Internal function to access the contract's NestHubAccountant slot
     /// @return $ A reference to the NestVaultCoreTypes.NestVaultCoreStorage struct
     function _getNestVaultCoreStorage() internal pure returns (NestVaultCoreTypes.NestVaultCoreStorage storage $) {
         assembly {
@@ -104,7 +98,7 @@ abstract contract NestVaultCore is
 
     /// @notice Initializes the vault with the necessary configurations.
     /// @dev    Initializes key components such as the accountant, asset, owner, and operator registry.
-    /// @param  _accountant       address The address of the NestAccountant contract
+    /// @param  _accountant       address The address of the NestHubAccountant contract
     /// @param  _asset            address The underlying asset that users deposit (e.g., ERC20 token)
     /// @param  _owner            address The address of the owner of the vault
     /// @param  _minRate          uint256 The minimum rate allowed for the vault
@@ -124,7 +118,7 @@ abstract contract NestVaultCore is
     }
 
     /// @dev Internal function to initialize the contract's state
-    /// @param  _accountant       address The address of the NestAccountant contract
+    /// @param  _accountant       address The address of the NestHubAccountant contract
     /// @param  _asset            address The underlying asset that users deposit (e.g., ERC20 token)
     /// @param  _owner            address The address of the owner of the vault
     /// @param  _minRate          uint256 The minimum rate allowed for the vault
@@ -150,8 +144,10 @@ abstract contract NestVaultCore is
         if (_minRate >= 10 ** IERC20Metadata(_asset).decimals()) {
             revert Errors.InvalidRate();
         }
-        $.accountant = NestAccountant(_accountant);
-        $.maxFees[NestVaultCoreTypes.Fees.InstantRedemption] = FEE_CAP;
+        $.accountant = NestHubAccountant(_accountant);
+        $.maxFees[NestVaultCoreTypes.Fees.InstantRedemption].rate = NestVaultCoreTypes.FEE_CAP;
+        $.maxFees[NestVaultCoreTypes.Fees.Deposit].rate = NestVaultCoreTypes.FEE_CAP;
+        $.maxFees[NestVaultCoreTypes.Fees.Redemption].rate = NestVaultCoreTypes.FEE_CAP;
         $.minRate = _minRate;
         $.executeSetOperatorRegistry(_operatorRegistry);
     }
@@ -426,7 +422,7 @@ abstract contract NestVaultCore is
         if (_rate == 0) revert Errors.InvalidRate();
 
         // prevent extreme values
-        if (_rate < $.minRate || _rate > UPPER_BOUND_RATE_CAP) {
+        if (_rate < $.minRate || _rate > NestVaultCoreTypes.UPPER_BOUND_RATE_CAP) {
             revert Errors.RateOutOfBounds();
         }
     }
@@ -450,9 +446,23 @@ abstract contract NestVaultCore is
         view
         returns (uint256 _postFeeAmount, uint256 _feeAmount)
     {
+        NestVaultCoreTypes.Fee storage fee = _getNestVaultCoreStorage().fees[NestVaultCoreTypes.Fees.InstantRedemption];
         uint256 _assets = _convertToAssets(_shares, Math.Rounding.Floor);
-        (_postFeeAmount, _feeAmount) =
-            _assets.calculatePostFeeAmounts(_getNestVaultCoreStorage().fees[NestVaultCoreTypes.Fees.InstantRedemption]);
+        (_postFeeAmount, _feeAmount) = _assets.calculatePostFeeAmounts(fee.rate, fee.flat);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function previewDeposit(uint256 _assets) public view virtual override returns (uint256) {
+        NestVaultCoreTypes.Fee storage fee = _getNestVaultCoreStorage().fees[NestVaultCoreTypes.Fees.Deposit];
+        (uint256 _postFeeAssets,) = _assets.calculatePostFeeAmounts(fee.rate, fee.flat);
+        return _convertToShares(_postFeeAssets, Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function previewMint(uint256 _shares) public view virtual override returns (uint256) {
+        NestVaultCoreTypes.Fee storage fee = _getNestVaultCoreStorage().fees[NestVaultCoreTypes.Fees.Deposit];
+        uint256 _postFeeAssets = _convertToAssets(_shares, Math.Rounding.Ceil);
+        return _postFeeAssets.calculatePreFeeAmount(fee.rate, fee.flat);
     }
 
     /// @inheritdoc ERC4626Upgradeable
@@ -494,12 +504,20 @@ abstract contract NestVaultCore is
         _getNestVaultCoreStorage().executeSetAccountant(_accountant, ERC20(asset()));
     }
 
-    /// @notice Set fee
-    /// @dev    This function allows an authorized entity to set the fee amount for a specific fee type.
-    /// @param  _f    NestVaultCoreTypes.Fees   Fee
-    /// @param  _fee  uint32                    Fee amount
-    function setFee(NestVaultCoreTypes.Fees _f, uint32 _fee) external requiresAuth {
+    /// @notice Set fee configuration (percentage rate + flat fee) for a fee type
+    /// @dev    Both rate and flat components are validated against their respective maxFees caps.
+    /// @param  _f   NestVaultCoreTypes.Fees  Fee type
+    /// @param  _fee NestVaultCoreTypes.Fee   Fee configuration (rate in 1e6, flat in asset units)
+    function setFee(NestVaultCoreTypes.Fees _f, NestVaultCoreTypes.Fee calldata _fee) external requiresAuth {
         _getNestVaultCoreStorage().executeSetFee(_f, _fee);
+    }
+
+    /// @notice Set maximum fee cap configuration for a fee type
+    /// @dev    The new caps must not be below the currently active fee for that type.
+    /// @param  _f      NestVaultCoreTypes.Fees  Fee type
+    /// @param  _maxFee NestVaultCoreTypes.Fee   Max fee configuration
+    function setMaxFee(NestVaultCoreTypes.Fees _f, NestVaultCoreTypes.Fee calldata _maxFee) external requiresAuth {
+        _getNestVaultCoreStorage().executeSetMaxFee(_f, _maxFee);
     }
 
     /// @notice Sets the operator registry used for global operator approvals
@@ -509,22 +527,33 @@ abstract contract NestVaultCore is
     }
 
     /// @notice Claims accrued fees for a fee type to a receiver
-    /// @dev    Restricted to authorized callers
+    /// @dev    Only callable by the SHARE token (manager controls claims via manage())
     /// @param  _f          NestVaultCoreTypes.Fees The fee type being claimed
     /// @param  _receiver   address                 The address receiving claimed fees
     /// @return _feeAmount  uint256                 The amount of fees claimed
     function claimFee(NestVaultCoreTypes.Fees _f, address _receiver)
         external
-        requiresAuth
         nonReentrant
         returns (uint256 _feeAmount)
     {
+        if (msg.sender != address(SHARE)) revert Errors.OnlyCallableByNestShare();
         _feeAmount = _getNestVaultCoreStorage().executeClaimFee(_f, _receiver, ERC20(asset()));
     }
 
     /*//////////////////////////////////////////////////////////////
                         VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Preview the result of a fulfillRedeem operation
+    /// @dev    Allows simulation of the effects of an async redemption fulfillment at the current block
+    /// @param  _shares         uint256 The number of shares to be fulfilled
+    /// @return _postFeeAmount  uint256 The amount of assets that would be credited after fees
+    /// @return _feeAmount      uint256 The fee amount that would be deducted
+    function previewFulfillRedeem(uint256 _shares) public view returns (uint256 _postFeeAmount, uint256 _feeAmount) {
+        NestVaultCoreTypes.Fee storage fee = _getNestVaultCoreStorage().fees[NestVaultCoreTypes.Fees.Redemption];
+        uint256 _assets = _convertToAssets(_shares, Math.Rounding.Floor);
+        (_postFeeAmount, _feeAmount) = _assets.calculatePostFeeAmounts(fee.rate, fee.flat);
+    }
 
     /// @notice Preview the result of an instant redeem operation
     /// @dev    Allows an on-chain or off-chain user to simulate the effects of their instant redemption at the current block, given
@@ -536,14 +565,23 @@ abstract contract NestVaultCore is
         (_postFeeAmount, _feeAmount) = _convertToAssetsForInstantRedeem(_shares);
     }
 
-    /// @notice Mapping of fees for different operations in the contract
-    /// @dev    The `fees` mapping associates each fee type (Deposit, Redemption, InstantRedemption) with its corresponding fee percentage
-    ///         For example, a value of 5000 represents a 0.5% fee (5000 / 1000000)
-    ///         Authorized users can modify these fees directly through this public mapping
-    /// @param  _f   NestVaultCoreTypes.Fees  The fee type for which the fee amount is requested
-    /// @return _fee uint32          fee in basis point
-    function fees(NestVaultCoreTypes.Fees _f) external view returns (uint32 _fee) {
-        _fee = _getNestVaultCoreStorage().fees[_f];
+    /// @notice Returns the fee configuration for a given fee type
+    /// @dev    The total fee for an operation is `flat + floor(gross * rate / 1e6)`.
+    /// @param  _f    NestVaultCoreTypes.Fees  The fee type
+    /// @return _rate uint32  Percentage fee rate (denominated in 1e6)
+    /// @return _flat uint256 Flat fee in asset token smallest units
+    function fees(NestVaultCoreTypes.Fees _f) external view returns (uint32 _rate, uint256 _flat) {
+        NestVaultCoreTypes.Fee storage fee = _getNestVaultCoreStorage().fees[_f];
+        return (fee.rate, fee.flat);
+    }
+
+    /// @notice Returns the configured maximum fee for a fee type
+    /// @param  _f NestVaultCoreTypes.Fees the type of fee
+    /// @return _rate uint32  Max percentage fee rate
+    /// @return _flat uint256 Max flat fee amount
+    function maxFees(NestVaultCoreTypes.Fees _f) external view returns (uint32 _rate, uint256 _flat) {
+        NestVaultCoreTypes.Fee storage maxFee = _getNestVaultCoreStorage().maxFees[_f];
+        return (maxFee.rate, maxFee.flat);
     }
 
     /// @notice The minimum rate allowed for exchange rate calculations
@@ -558,14 +596,6 @@ abstract contract NestVaultCore is
     /// @return uint256 total pending shares
     function totalPendingShares() external view returns (uint256) {
         return _getNestVaultCoreStorage().totalPendingShares;
-    }
-
-    /// @notice Returns the configured maximum fee for a fee type
-    /// @dev    Fee caps use 1e6 precision (e.g., 200000 = 20%) and are enforced by `setFee`.
-    /// @param  f NestVaultCoreTypes.Fees the type of fee
-    /// @return   uint32         fee in basis points
-    function maxFees(NestVaultCoreTypes.Fees f) external view returns (uint32) {
-        return _getNestVaultCoreStorage().maxFees[f];
     }
 
     /// @notice Total unclaimed fees for a given fee type denominated in vault assets
@@ -587,8 +617,8 @@ abstract contract NestVaultCore is
     /// @notice Returns the accountant with rate providers used to obtain asset conversion rates
     /// @dev    The accountant is responsible for providing up-to-date conversion rates between assets and shares,
     ///         enabling accurate calculations for deposits, withdrawals, and redemptions
-    /// @return NestAccountant The NestAccountant contract associated with the vault
-    function accountant() external view returns (NestAccountant) {
+    /// @return NestHubAccountant The NestHubAccountant contract associated with the vault
+    function accountant() external view returns (NestHubAccountant) {
         return _getNestVaultCoreStorage().accountant;
     }
 

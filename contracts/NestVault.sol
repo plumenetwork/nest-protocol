@@ -21,7 +21,7 @@ contract NestVault is NestVaultPermit2 {
 
     /// @notice Initializes the vault with the necessary configurations
     /// @dev    Initializes key components such as the accountant, asset, and owner
-    /// @param  _accountant                     address The address of the NestAccountant contract
+    /// @param  _accountant                     address The address of the NestHubAccountant contract
     /// @param  _asset                          address The underlying asset that users deposit (e.g., ERC20 token)
     /// @param  _owner                          address The address of the owner of the vault
     /// @param  _minRate                        uint256 The minimum rate allowed for the vault,

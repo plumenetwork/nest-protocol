@@ -87,7 +87,7 @@ contract DeployNestShareOFT_nALPHA_USDC is DeployNestShareOFT {
         deployRolesAuthority(nAlphaShareConfig);
         // 2. deploy NestShareOFT
         (, address _nestShareOFT) = deployNestShareOFT(nAlphaShareConfig);
-        // 3. deploy NestAccountant
+        // 3. deploy NestHubAccountant
         (, address _nestAccountant) = deployNestAccountant(nAlphaShareConfig, _nestShareOFT, usdcAsset.assetAddress);
         // 4. deploy NestVault
         deployNestVault(nAlphaShareConfig, _nestShareOFT, _nestAccountant, usdcAsset.assetAddress);

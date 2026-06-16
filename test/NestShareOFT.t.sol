@@ -39,6 +39,7 @@ import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
 import {Errors} from "contracts/types/Errors.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 contract NestShareOFTTest is TestHelperOz5 {
     using OptionsBuilder for bytes;
@@ -856,5 +857,215 @@ contract NestShareOFTTest is TestHelperOz5 {
         vm.prank(userA);
         vm.expectRevert(abi.encodeWithSelector(BlacklistHook.BlacklistHook__Blacklisted.selector, userA));
         aOFT.send{value: fee.nativeFee}(sendParam, fee, payable(address(this)));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                EIP-1271
+    //////////////////////////////////////////////////////////////*/
+
+    bytes32 internal constant NEST_MESSAGE_TYPEHASH = keccak256("NestMessage(bytes32 hash)");
+    bytes4 internal constant ERC1271_MAGIC_VALUE = 0x1626ba7e;
+    bytes4 internal constant ERC1271_INVALID = 0xffffffff;
+
+    /// @dev Wrap an arbitrary inner hash with the OFT's EIP-712 domain the same way
+    ///      isValidSignature does on-chain.
+    function _wrapForOFT(NestShareOFT oft, bytes32 innerHash) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(NEST_MESSAGE_TYPEHASH, innerHash));
+        return keccak256(abi.encodePacked("\x19\x01", oft.DOMAIN_SEPARATOR(), structHash));
+    }
+
+    /// @dev Sign the wrapped digest with the given key, returning a 65-byte (r,s,v) blob.
+    function _signWrappedForOFT(NestShareOFT oft, uint256 pk, bytes32 innerHash) internal view returns (bytes memory) {
+        bytes32 wrapped = _wrapForOFT(oft, innerHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, wrapped);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function test_strategistSigner_defaultsToZero() public view {
+        assertEq(aOFT.strategistSigner(), address(0));
+    }
+
+    function test_isSignatureChecker_defaultsToFalse() public view {
+        assertEq(aOFT.isSignatureChecker(address(this)), false);
+        assertEq(aOFT.isSignatureChecker(address(0)), false);
+    }
+
+    function test_setStrategistSigner_updates_and_emits() public {
+        address signer = vm.addr(0xBEEF);
+        vm.expectEmit(true, false, false, false, address(aOFT));
+        emit NestShareOFT.StrategistSignerUpdated(signer);
+        aOFT.setStrategistSigner(signer);
+        assertEq(aOFT.strategistSigner(), signer);
+    }
+
+    function test_setStrategistSigner_revertsWhenUnauthorized() public {
+        aOFT.setAuthority(Authority(address(new MockAuthority(false))));
+        vm.expectRevert(AuthUpgradeable.AUTH_UNAUTHORIZED.selector);
+        vm.prank(userA);
+        aOFT.setStrategistSigner(vm.addr(0xBEEF));
+    }
+
+    function test_setSignatureChecker_updates_and_emits() public {
+        address checker = address(0xCAFE);
+        vm.expectEmit(true, false, false, true, address(aOFT));
+        emit NestShareOFT.SignatureCheckerUpdated(checker, true);
+        aOFT.setSignatureChecker(checker, true);
+        assertEq(aOFT.isSignatureChecker(checker), true);
+
+        vm.expectEmit(true, false, false, true, address(aOFT));
+        emit NestShareOFT.SignatureCheckerUpdated(checker, false);
+        aOFT.setSignatureChecker(checker, false);
+        assertEq(aOFT.isSignatureChecker(checker), false);
+    }
+
+    function test_setSignatureChecker_revertsWhenUnauthorized() public {
+        aOFT.setAuthority(Authority(address(new MockAuthority(false))));
+        vm.expectRevert(AuthUpgradeable.AUTH_UNAUTHORIZED.selector);
+        vm.prank(userA);
+        aOFT.setSignatureChecker(address(0xCAFE), true);
+    }
+
+    function test_isValidSignature_returnsMagicValueForAuthorizedSigner() public {
+        uint256 signerKey = 0xA11CE5;
+        address signer = vm.addr(signerKey);
+        address checker = address(0xCAFE);
+
+        aOFT.setStrategistSigner(signer);
+        aOFT.setSignatureChecker(checker, true);
+
+        bytes32 innerHash = keccak256("hello permit2");
+        bytes memory sig = _signWrappedForOFT(aOFT, signerKey, innerHash);
+
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, sig), ERC1271_MAGIC_VALUE);
+    }
+
+    function test_isValidSignature_rejectsUnwhitelistedCaller() public {
+        uint256 signerKey = 0xA11CE5;
+        address signer = vm.addr(signerKey);
+
+        aOFT.setStrategistSigner(signer);
+        // intentionally do NOT whitelist the caller
+
+        bytes32 innerHash = keccak256("hello permit2");
+        bytes memory sig = _signWrappedForOFT(aOFT, signerKey, innerHash);
+
+        vm.prank(address(0xCAFE));
+        assertEq(aOFT.isValidSignature(innerHash, sig), ERC1271_INVALID);
+    }
+
+    function test_isValidSignature_rejectsUnauthorizedSigner() public {
+        uint256 signerKey = 0xA11CE5;
+        uint256 attackerKey = 0xBADBAD;
+        address signer = vm.addr(signerKey);
+        address checker = address(0xCAFE);
+
+        aOFT.setStrategistSigner(signer);
+        aOFT.setSignatureChecker(checker, true);
+
+        bytes32 innerHash = keccak256("hello permit2");
+        bytes memory sig = _signWrappedForOFT(aOFT, attackerKey, innerHash);
+
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, sig), ERC1271_INVALID);
+    }
+
+    function test_isValidSignature_rejectsWhenSignerUnset() public {
+        address checker = address(0xCAFE);
+        aOFT.setSignatureChecker(checker, true);
+
+        bytes32 innerHash = keccak256("hello permit2");
+        bytes memory sig = _signWrappedForOFT(aOFT, 0xA11CE5, innerHash);
+
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, sig), ERC1271_INVALID);
+    }
+
+    function test_isValidSignature_rejectsMalformedSignature() public {
+        address checker = address(0xCAFE);
+        aOFT.setStrategistSigner(vm.addr(0xA11CE5));
+        aOFT.setSignatureChecker(checker, true);
+
+        bytes memory badSig = hex"deadbeef";
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(keccak256("x"), badSig), ERC1271_INVALID);
+    }
+
+    function test_isValidSignature_signerRotation() public {
+        uint256 oldKey = 0xA11CE5;
+        uint256 newKey = 0xC0FFEE;
+        address checker = address(0xCAFE);
+
+        aOFT.setStrategistSigner(vm.addr(oldKey));
+        aOFT.setSignatureChecker(checker, true);
+
+        bytes32 innerHash = keccak256("rotation");
+        bytes memory oldSig = _signWrappedForOFT(aOFT, oldKey, innerHash);
+
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, oldSig), ERC1271_MAGIC_VALUE);
+
+        // rotate
+        aOFT.setStrategistSigner(vm.addr(newKey));
+
+        // old sig now invalid
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, oldSig), ERC1271_INVALID);
+
+        // new key works
+        bytes memory newSig = _signWrappedForOFT(aOFT, newKey, innerHash);
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, newSig), ERC1271_MAGIC_VALUE);
+    }
+
+    function test_isValidSignature_rejectsUnwrappedSignature() public {
+        // A signature over the raw inner hash (without our EIP-712 wrapper) must NOT validate.
+        uint256 signerKey = 0xA11CE5;
+        address checker = address(0xCAFE);
+
+        aOFT.setStrategistSigner(vm.addr(signerKey));
+        aOFT.setSignatureChecker(checker, true);
+
+        bytes32 innerHash = keccak256("unwrapped");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, innerHash);
+        bytes memory rawSig = abi.encodePacked(r, s, v);
+
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, rawSig), ERC1271_INVALID);
+    }
+
+    function test_isValidSignature_rejectsCrossInstanceReplay() public {
+        // Same strategistSigner across two OFT instances. A signature wrapped against aOFT's
+        // domain must not validate against bOFT (and vice versa).
+        uint256 signerKey = 0xA11CE5;
+        address signer = vm.addr(signerKey);
+        address checker = address(0xCAFE);
+
+        aOFT.setStrategistSigner(signer);
+        bOFT.setStrategistSigner(signer);
+        aOFT.setSignatureChecker(checker, true);
+        bOFT.setSignatureChecker(checker, true);
+
+        bytes32 innerHash = keccak256("cross-instance");
+
+        // sig for aOFT only
+        bytes memory sigForA = _signWrappedForOFT(aOFT, signerKey, innerHash);
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, sigForA), ERC1271_MAGIC_VALUE);
+
+        // The same sig must NOT validate on bOFT — different domain separator (different address).
+        vm.prank(checker);
+        assertEq(bOFT.isValidSignature(innerHash, sigForA), ERC1271_INVALID);
+
+        // And vice versa.
+        bytes memory sigForB = _signWrappedForOFT(bOFT, signerKey, innerHash);
+        vm.prank(checker);
+        assertEq(bOFT.isValidSignature(innerHash, sigForB), ERC1271_MAGIC_VALUE);
+        vm.prank(checker);
+        assertEq(aOFT.isValidSignature(innerHash, sigForB), ERC1271_INVALID);
+    }
+
+    function test_supportsInterface_advertisesIERC1271() public view {
+        assertTrue(aOFT.supportsInterface(type(IERC1271).interfaceId));
     }
 }

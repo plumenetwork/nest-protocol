@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
 import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {NestVaultAccountingLogic} from "contracts/libraries/nest-vault/NestVaultAccountingLogic.sol";
 import {NestVaultCoreValidationLogic} from "contracts/libraries/nest-vault/NestVaultCoreValidationLogic.sol";
 import {NestVaultTransferLogic} from "contracts/libraries/nest-vault/NestVaultTransferLogic.sol";
 
@@ -14,6 +15,7 @@ import {NestVaultTransferLogic} from "contracts/libraries/nest-vault/NestVaultTr
 /// @author plumenetwork
 /// @custom:oz-upgrades-unsafe-allow external-library-linking
 library NestVaultDepositLogic {
+    using NestVaultAccountingLogic for uint256;
     using NestVaultCoreValidationLogic for NestVaultCoreTypes.NestVaultCoreStorage;
     using NestVaultTransferLogic for ERC20;
     using NestVaultTransferLogic for NestShareOFT;
@@ -56,9 +58,17 @@ library NestVaultDepositLogic {
         $.validateDeposit(_isAuthorized, _assets, _shares);
 
         assetToken.safeTransferFrom(_caller, address(this), _assets);
-        SafeERC20.forceApprove(IERC20(address(assetToken)), address(shareToken), _assets);
 
-        shareToken.safeEnter(assetToken, _assets, _receiver, _shares);
+        // Apply deposit fee (flat + percentage): deduct fee from assets before entering share token
+        NestVaultCoreTypes.Fee storage feeConfig = $.fees[NestVaultCoreTypes.Fees.Deposit];
+        (uint256 _netAssets, uint256 _feeAmount) = _assets.calculatePostFeeAmounts(feeConfig.rate, feeConfig.flat);
+        if (_feeAmount > 0) {
+            $.claimableFees[NestVaultCoreTypes.Fees.Deposit] += _feeAmount;
+        }
+
+        SafeERC20.forceApprove(IERC20(address(assetToken)), address(shareToken), _netAssets);
+
+        shareToken.safeEnter(assetToken, _netAssets, _receiver, _shares);
 
         SafeERC20.forceApprove(IERC20(address(assetToken)), address(shareToken), 0);
 

@@ -87,7 +87,7 @@ contract DeployNestShareOFT_nBASIS_USDC is DeployNestShareOFT {
         deployRolesAuthority(nBasisShareConfig);
         // 2. deploy NestShareOFT
         (, address _nestShareOFT) = deployNestShareOFT(nBasisShareConfig);
-        // 3. deploy NestAccountant
+        // 3. deploy NestHubAccountant
         (, address _nestAccountant) = deployNestAccountant(nBasisShareConfig, _nestShareOFT, usdcAsset.assetAddress);
         // 4. deploy NestVault
         deployNestVault(nBasisShareConfig, _nestShareOFT, _nestAccountant, usdcAsset.assetAddress);

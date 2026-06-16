@@ -8,7 +8,7 @@ import {Upgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 
 // contracts
 import {Constants} from "script/Constants.sol";
-import {MockNestAccountant, NestAccountant} from "test/mock/MockNestAccountant.sol";
+import {MockNestAccountant, NestHubAccountant} from "test/mock/MockNestAccountant.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
 
@@ -22,7 +22,9 @@ contract NestAccountantForkTest is Constants, Test {
     MockNestAccountant internal immutable NEST_ACCOUNTANT;
 
     constructor() {
-        // deploy NestAccountant
+        vm.createSelectFork("ethereum");
+
+        // deploy NestHubAccountant
         Options memory _nestAccountantProxyOpts = Options({
             referenceContract: "",
             referenceBuildInfoDir: "",
@@ -58,7 +60,12 @@ contract NestAccountantForkTest is Constants, Test {
                     1_000_003, // allowedExchangeRateChangeUpper
                     999_997, // allowedExchangeRateChangeLower
                     3600, // minimumUpdateDelayInSeconds,
-                    uint32(10_000), // managementFee,
+                    uint32(10_000), // managementFee
+                    uint32(0), // performanceFee
+                    uint32(0), // hurdleRate
+                    uint32(0), // holdbackRate
+                    uint32(0), // crystallizationWindow
+                    uint32(0), // epochsPerWindow
                     address(this) // owner
                 )
             ),
@@ -101,7 +108,19 @@ contract NestAccountantForkTest is Constants, Test {
         uint256 __totalSharesLastUpdate = IERC20(NALPHA).totalSupply();
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         NEST_ACCOUNTANT.initialize(
-            __totalSharesLastUpdate, address(this), 1000000, 1_000_003, 999_997, 3600, 10_000, address(this)
+            __totalSharesLastUpdate,
+            address(this),
+            1000000,
+            1_000_003,
+            999_997,
+            3600,
+            10_000,
+            0,
+            0,
+            0,
+            0,
+            0,
+            address(this)
         );
     }
 
@@ -119,7 +138,7 @@ contract NestAccountantForkTest is Constants, Test {
     function test_pause_setsPausedAndEmitsEvent() public {
         vm.prank(address(this));
         vm.expectEmit();
-        emit NestAccountant.Paused();
+        emit NestHubAccountant.Paused();
 
         NEST_ACCOUNTANT.pause();
 
@@ -143,7 +162,7 @@ contract NestAccountantForkTest is Constants, Test {
         // Expect the Unpaused() event
         vm.prank(address(this));
         vm.expectEmit();
-        emit NestAccountant.Unpaused();
+        emit NestHubAccountant.Unpaused();
 
         // Call unpause
         NEST_ACCOUNTANT.unpause();
@@ -163,15 +182,16 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Ensures invalid updates revert while unpaused and do not accrue fees or checkpoint state.
     function test_updateExchangeRate_multipleInvalidUpdatesDoNotAccumulateDuplicateFees() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         uint256 initialExchangeRate = initialState.exchangeRate;
         uint64 minimumDelay = initialState.minimumUpdateDelayInSeconds;
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
 
         vm.warp(block.timestamp + minimumDelay + 1000);
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate + 20));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate + 20), _supply);
 
-        NestAccountant.AccountantState memory stateAfterFirst = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterFirst = NEST_ACCOUNTANT.getAccountantState();
         assertEq(stateAfterFirst.feesOwedInBase, initialState.feesOwedInBase, "Fees should not accrue on revert");
         assertEq(
             stateAfterFirst.lastUpdateTimestamp,
@@ -187,24 +207,25 @@ contract NestAccountantForkTest is Constants, Test {
 
         vm.warp(block.timestamp + minimumDelay + 800);
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate - 30));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate - 30), _supply);
 
-        NestAccountant.AccountantState memory stateAfterSecond = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterSecond = NEST_ACCOUNTANT.getAccountantState();
         assertEq(stateAfterSecond.feesOwedInBase, initialState.feesOwedInBase, "Repeated invalid updates should revert");
     }
 
     /// @dev Ensures invalid timing reverts while unpaused and does not double-charge later updates.
     function test_updateExchangeRate_invalidDueToTimingDoesNotDoubleChargeOnValidUpdate() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         uint256 initialExchangeRate = initialState.exchangeRate;
         uint64 minimumDelay = initialState.minimumUpdateDelayInSeconds;
 
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
         uint256 earlyTimeDelta = minimumDelay / 2;
         vm.warp(block.timestamp + earlyTimeDelta);
         vm.expectRevert(Errors.MinimumUpdateDelayNotPassed.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate), _supply);
 
-        NestAccountant.AccountantState memory stateAfterEarlyAttempt = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterEarlyAttempt = NEST_ACCOUNTANT.getAccountantState();
         assertEq(stateAfterEarlyAttempt.feesOwedInBase, initialState.feesOwedInBase, "Reverted call should not accrue");
         assertEq(
             stateAfterEarlyAttempt.lastUpdateTimestamp,
@@ -214,13 +235,13 @@ contract NestAccountantForkTest is Constants, Test {
 
         uint256 waitTime = minimumDelay;
         vm.warp(block.timestamp + waitTime);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate + 1));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialExchangeRate + 1), uint128(IERC20(NALPHA).totalSupply()));
 
-        NestAccountant.AccountantState memory stateAfterValid = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterValid = NEST_ACCOUNTANT.getAccountantState();
         uint256 expectedFees = calculateExpectedFees(
             initialState.totalSharesLastUpdate,
             initialExchangeRate,
-            initialState.managementFee,
+            NEST_ACCOUNTANT.getAccountantState().managementFee,
             earlyTimeDelta + waitTime
         );
 
@@ -232,13 +253,14 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Ensures that exchange rate remains unchanged after an invalid update attempt.
     function test_updateExchangeRate_invalidUpdateDoesNotChangeRate() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         uint256 initialRate = initialState.exchangeRate;
         uint64 minimumDelay = initialState.minimumUpdateDelayInSeconds;
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
 
         vm.warp(block.timestamp + minimumDelay + 1000);
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialRate + 50));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialRate + 50), _supply);
 
         assertEq(
             NEST_ACCOUNTANT.getAccountantState().exchangeRate,
@@ -249,14 +271,15 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Ensures invalid updates do not advance total shares or timestamps.
     function test_updateExchangeRate_invalidUpdateDoesNotAdvanceTotalSharesAndTimestamp() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         uint64 initialTimestamp = initialState.lastUpdateTimestamp;
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
 
         vm.warp(block.timestamp + initialState.minimumUpdateDelayInSeconds + 2000);
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialState.exchangeRate + 100));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialState.exchangeRate + 100), _supply);
 
-        NestAccountant.AccountantState memory stateAfterInvalid = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterInvalid = NEST_ACCOUNTANT.getAccountantState();
         assertEq(
             stateAfterInvalid.lastUpdateTimestamp, initialTimestamp, "Timestamp should not advance on invalid update"
         );
@@ -269,63 +292,67 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Ensures that invalid updates due to rate exceeding upper bound revert while unpaused.
     function test_updateExchangeRate_invalidRateUpperBoundRevertsWhenUnpaused() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         assertEq(initialState.isPaused, false, "Contract should start unpaused");
         uint64 minimumDelay = initialState.minimumUpdateDelayInSeconds;
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
 
         uint256 invalidRate = initialState.exchangeRate + 100;
         vm.warp(block.timestamp + minimumDelay + 1000);
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(invalidRate));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(invalidRate), _supply);
 
-        NestAccountant.AccountantState memory stateAfterUpdate = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterUpdate = NEST_ACCOUNTANT.getAccountantState();
         assertFalse(stateAfterUpdate.isPaused, "Invalid update should revert instead of pausing");
     }
 
     /// @dev Ensures that invalid updates due to rate below lower bound revert while unpaused.
     function test_updateExchangeRate_invalidRateLowerBoundRevertsWhenUnpaused() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         assertEq(initialState.isPaused, false, "Contract should start unpaused");
         uint64 minimumDelay = initialState.minimumUpdateDelayInSeconds;
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
 
         uint256 invalidRate = initialState.exchangeRate - 100;
         vm.warp(block.timestamp + minimumDelay + 1000);
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(invalidRate));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(invalidRate), _supply);
 
-        NestAccountant.AccountantState memory stateAfterUpdate = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterUpdate = NEST_ACCOUNTANT.getAccountantState();
         assertFalse(stateAfterUpdate.isPaused, "Invalid update should revert instead of pausing");
     }
 
     /// @dev Ensures that invalid updates due to insufficient time delay revert while unpaused.
     function test_updateExchangeRate_invalidTimingRevertsWhenUnpaused() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         assertEq(initialState.isPaused, false, "Contract should start unpaused");
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
 
         uint256 timeTooEarly = initialState.minimumUpdateDelayInSeconds / 2;
         vm.warp(block.timestamp + timeTooEarly);
         vm.expectRevert(Errors.MinimumUpdateDelayNotPassed.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialState.exchangeRate));
+        NEST_ACCOUNTANT.updateExchangeRate(uint96(initialState.exchangeRate), _supply);
 
-        NestAccountant.AccountantState memory stateAfterUpdate = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterUpdate = NEST_ACCOUNTANT.getAccountantState();
         assertFalse(stateAfterUpdate.isPaused, "Invalid update should revert instead of pausing");
     }
 
     /// @dev Ensures pause state does not bypass exchange-rate bounds checks.
     function test_updateExchangeRate_pausedDoesNotBypassBounds() public {
-        NestAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
         uint64 minimumDelay = initialState.minimumUpdateDelayInSeconds;
 
         NEST_ACCOUNTANT.pause();
-        NestAccountant.AccountantState memory pausedState = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory pausedState = NEST_ACCOUNTANT.getAccountantState();
         uint64 pauseTimestamp = pausedState.lastUpdateTimestamp;
 
         vm.warp(pauseTimestamp + minimumDelay + 1);
         uint96 outOfBoundsRate = uint96(initialState.exchangeRate + 50000);
+        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
         vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateExchangeRate(outOfBoundsRate);
+        NEST_ACCOUNTANT.updateExchangeRate(outOfBoundsRate, _supply);
 
-        NestAccountant.AccountantState memory stateAfterPausedUpdate = NEST_ACCOUNTANT.getAccountantState();
+        NestHubAccountant.AccountantState memory stateAfterPausedUpdate = NEST_ACCOUNTANT.getAccountantState();
         assertTrue(stateAfterPausedUpdate.isPaused, "Should remain paused");
         assertEq(
             stateAfterPausedUpdate.exchangeRate, pausedState.exchangeRate, "Rate should not change on reverted update"
@@ -340,7 +367,8 @@ contract NestAccountantForkTest is Constants, Test {
         );
     }
 
-    /// @dev Helper function to calculate expected fees for a given time period
+    /// @dev Helper function to calculate expected fees for a given time period.
+    ///      Mirrors the contract's computation order: per-share discount first, then multiply by shares.
     function calculateExpectedFees(uint256 totalShares, uint256 exchangeRate, uint32 managementFee, uint256 timeDelta)
         internal
         view
@@ -350,8 +378,7 @@ contract NestAccountantForkTest is Constants, Test {
         uint256 ONE_YEAR = 365 days;
         uint256 DENOMINATOR = 1e6;
 
-        uint256 assets = uint256(totalShares) * exchangeRate / ONE_SHARE;
-        uint256 managementFeesAnnual = assets * managementFee / DENOMINATOR;
-        return managementFeesAnnual * timeDelta / ONE_YEAR;
+        uint256 mgmtDiscount = exchangeRate * uint256(managementFee) * timeDelta / (DENOMINATOR * ONE_YEAR);
+        return mgmtDiscount * totalShares / ONE_SHARE;
     }
 }

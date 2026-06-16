@@ -16,7 +16,7 @@ contract MockRateProvider {
         return rate;
     }
 
-    // Mock functions for NestAccountant compatibility
+    // Mock functions for NestHubAccountant compatibility
     function totalPendingShares() external view returns (uint256) {
         return _totalPendingShares;
     }
@@ -25,7 +25,7 @@ contract MockRateProvider {
         _totalPendingShares += _amount;
     }
 
-    /// @dev Mirrors production NestAccountant.decreaseTotalPendingShares behavior:
+    /// @dev Mirrors production NestHubAccountant.decreaseTotalPendingShares behavior:
     ///      reverts with Errors.InsufficientBalance()
     function decreaseTotalPendingShares(uint256 _amount) external {
         if (_amount > _totalPendingShares) {

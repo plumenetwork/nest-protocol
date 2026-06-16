@@ -87,7 +87,7 @@ contract DeployNestShareOFT_nTBILL_USDC is DeployNestShareOFT {
         deployRolesAuthority(nTbillShareConfig);
         // 2. deploy NestShareOFT
         (, address _nestShareOFT) = deployNestShareOFT(nTbillShareConfig);
-        // 3. deploy NestAccountant
+        // 3. deploy NestHubAccountant
         (, address _nestAccountant) = deployNestAccountant(nTbillShareConfig, _nestShareOFT, usdcAsset.assetAddress);
         // 4. deploy NestVault
         deployNestVault(nTbillShareConfig, _nestShareOFT, _nestAccountant, usdcAsset.assetAddress);

@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import "../BaseL0Script.sol";
 import {ICreateX} from "createx/ICreateX.sol";
 import {RolesAuthority, Authority} from "@solmate/auth/authorities/RolesAuthority.sol";
-import {NestAccountant} from "contracts/NestAccountant.sol";
+import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {DeployNestProtocolOFT} from "script/DeployNestOFTProtocol/DeployNestProtocolOFT.sol";
 
 /// @title DeployNestShareOFT
@@ -75,7 +75,7 @@ abstract contract DeployNestShareOFT is DeployNestProtocolOFT {
                 deployRolesAuthority(broadcastConfig.nestShareConfigs[v]);
                 // 2. deploy NestShareOFT
                 (, address _nestShareOFT) = deployNestShareOFT(broadcastConfig.nestShareConfigs[v]);
-                // 3. deploy NestAccountant
+                // 3. deploy NestHubAccountant
                 (, address _nestAccountant) = deployNestAccountant(
                     broadcastConfig.nestShareConfigs[v], _nestShareOFT, broadcastConfig.assets[a].assetAddress
                 );
@@ -168,12 +168,12 @@ abstract contract DeployNestShareOFT is DeployNestProtocolOFT {
         public
         returns (address implementation, address proxy)
     {
-        // Deploy the NestAccountant implementation
-        implementation = address(new NestAccountant(asset, nestShareOFT));
+        // Deploy the NestHubAccountant implementation
+        implementation = address(new NestHubAccountant(asset, nestShareOFT));
 
         // Prepare initialization arguments
         bytes memory initializeArgs = abi.encodeWithSelector(
-            NestAccountant.initialize.selector,
+            NestHubAccountant.initialize.selector,
             0, // totalSharesLastUpdate
             vm.addr(oftDeployerPK), // payoutAddress
             1000000, // startingExchangeRate
@@ -181,12 +181,17 @@ abstract contract DeployNestShareOFT is DeployNestProtocolOFT {
             10000, // allowedExchangeRateChangeLower
             3600, // minimumUpdateDelayInSeconds
             0, // managementFee
+            0, // performanceFee
+            0, // hurdleRate
+            0, // holdbackRate
+            0, // crystallizationWindow
+            0, // epochsPerWindow
             vm.addr(oftDeployerPK) // owner
         );
 
         // Deploy proxy deterministically using CREATE3
         string memory saltString =
-            string.concat("NestAccountant", "-", nestShareConfig.name, "-", nestShareConfig.symbol);
+            string.concat("NestHubAccountant", "-", nestShareConfig.name, "-", nestShareConfig.symbol);
         bytes32 salt = generateCreate3Salt(vm.addr(oftDeployerPK), saltString);
 
         // Deploy TransparentUpgradeableProxy with the existing ProxyAdmin from L0Config
@@ -203,7 +208,7 @@ abstract contract DeployNestShareOFT is DeployNestProtocolOFT {
             )
         );
 
-        console.log("=== NestAccountant Deployed ===");
+        console.log("=== NestHubAccountant Deployed ===");
         console.log("Share Symbol:", nestShareConfig.symbol);
         console.log("Implementation:", implementation);
         console.log("Proxy:", proxy);
@@ -211,7 +216,7 @@ abstract contract DeployNestShareOFT is DeployNestProtocolOFT {
         console.log("===============================");
 
         // State checks
-        require(NestAccountant(proxy).owner() == vm.addr(oftDeployerPK), "NestAccountant owner incorrect");
+        require(NestHubAccountant(proxy).owner() == vm.addr(oftDeployerPK), "NestHubAccountant owner incorrect");
     }
 
     function deployNestVault(

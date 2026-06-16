@@ -40,7 +40,7 @@ contract NestVaultOFT is NestVaultPermit2, OFTCoreUpgradeable {
     /// @notice Initializes the vault with the necessary configurations
     /// @dev    Initializes key components such as the accountant, asset, and owner
     ///         `_delegate` is set as LZ delegate whereas `_owner` is used for Auth
-    /// @param  _accountant                  address The address of the NestAccountant contract
+    /// @param  _accountant                  address The address of the NestHubAccountant contract
     /// @param  _asset                       address The underlying asset that users deposit (e.g., ERC20 token)
     /// @param  _delegate                    address The address of the LayerZero delegate
     /// @param  _owner                       address The address of the owner of the vault
