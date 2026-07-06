@@ -126,6 +126,13 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
         return 6;
     }
 
+    /// @notice Returns the version of the NestShareOFT contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.1.0";
+    }
+
     /// @notice Returns the NestVault address associated with a given asset.
     /// @dev    Returns the address of the NestVault for the given asset
     /// @param  _asset address the ERC-20 token to deposit with into the NestVault

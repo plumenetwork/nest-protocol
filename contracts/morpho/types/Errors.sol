@@ -31,10 +31,11 @@ library NestBundleErrors {
     /// @param ownerBalance Current owner loan-asset balance.
     /// @param requiredPullAssets Required owner-funded assets.
     error InsufficientOwnerLoanAssets(uint256 ownerBalance, uint256 requiredPullAssets);
-    /// @notice Instant redeem liquidity is insufficient for requested redeem shares.
+    /// @notice The share-token redeem buffer is insufficient for the requested redeem shares. Applies to both
+    ///         instant and modern async redeems, which draw assets from the same buffer.
     /// @param requestedRedeemShares Shares requested for redeem.
-    /// @param availableRedeemShares Shares currently redeemable instantly.
-    error InsufficientInstantRedeemLiquidity(uint256 requestedRedeemShares, uint256 availableRedeemShares);
+    /// @param availableRedeemShares Shares currently redeemable from the buffer.
+    error InsufficientRedeemLiquidity(uint256 requestedRedeemShares, uint256 availableRedeemShares);
     /// @notice Borrow and repay cannot both be non-zero in the same delta.
     /// @param borrow Requested borrow amount.
     /// @param repay Requested repay amount.
@@ -147,6 +148,27 @@ library NestBundleErrors {
     /// @param redeemShares Shares required after fee inflation.
     /// @param withdrawCollateralShares Shares available from Morpho collateral withdrawal.
     error InsufficientCollateralForRedeem(uint256 redeemShares, uint256 withdrawCollateralShares);
+    /// @notice Morpho holds no loan-token liquidity to seed a looped deleverage flash loan.
+    error ZeroLiquidity();
+    /// @notice Looped deleverage needs more flash-loan loops than the supported maximum.
+    error ExceedsMaxLoops();
+    /// @notice A looped-deleverage repay chunk is below one borrow-share's worth, so Morpho would burn 0 shares
+    ///         and the adapter's share-price check would divide by zero. Caught at build time as a clean revert.
+    /// @param repayAssets The chunk's assets-based repay that burns zero borrow shares.
+    /// @param totalBorrowAssets Market total borrow assets at that loop.
+    /// @param totalBorrowShares Market total borrow shares at that loop.
+    error LoopRepayBurnsZeroShares(uint256 repayAssets, uint256 totalBorrowAssets, uint256 totalBorrowShares);
+    /// @notice A looped-deleverage loop's post-withdraw state would breach the market LLTV mid-loop.
+    /// @dev Single-shot deleverage repays the full debt before withdrawing (so Morpho sees a healthy final
+    ///      state), but a loop repays only its slice before withdrawing fee-inflated collateral, which can
+    ///      transiently raise LTV above LLTV. Caught at build time so the keeper falls back to the legacy route.
+    error LoopBreachesLltv();
+    /// @notice Aggregate net share price across all looped redeem chunks fell below the user's minimum.
+    /// @dev Per-chunk floors are relaxed by each chunk's flat fee, so cumulative fees can erode the
+    ///      whole-redeem net price below `minSharePriceE27`; this enforces the user's net floor in aggregate.
+    /// @param netSharePriceE27 Realized aggregate net share price (totalRepay / totalRedeemShares) in E27.
+    /// @param minSharePriceE27 User-requested minimum net share price in E27.
+    error AggregateSharePriceBelowMin(uint256 netSharePriceE27, uint256 minSharePriceE27);
 }
 
 /// @title NestBundlerErrors

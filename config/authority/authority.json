@@ -1,0 +1,192 @@
+{
+  "capabilities": [
+    {
+      "role": 3,
+      "target": "share",
+      "functions": [
+        "enter(address,address,uint256,address,uint256)",
+        "exit(address,address,uint256,address,uint256)"
+      ]
+    },
+    {
+      "role": 2,
+      "target": "share",
+      "functions": [
+        "manage(address,bytes,uint256)",
+        "manage(address[],bytes[],uint256[])"
+      ]
+    },
+    {
+      "role": 3,
+      "target": "accountant",
+      "functions": [
+        "increaseTotalPendingShares(uint256)",
+        "decreaseTotalPendingShares(uint256)"
+      ]
+    },
+    {
+      "role": 4,
+      "target": "accountant",
+      "functions": [
+        "updateExchangeRate(uint96)",
+        "updateExchangeRate(uint96,uint128)"
+      ]
+    },
+    {
+      "role": 6,
+      "target": "accountant",
+      "functions": [
+        "pause()"
+      ]
+    },
+    {
+      "role": 0,
+      "target": "accountant",
+      "functions": [
+        "unpause()"
+      ]
+    },
+    {
+      "role": 7,
+      "target": "vault",
+      "functions": [
+        "deposit(uint256,address)",
+        "mint(uint256,address)"
+      ],
+      "conditionalOn": "predicateProxy"
+    },
+    {
+      "role": 5,
+      "target": "vault",
+      "functions": [
+        "fulfillRedeem(address,uint256)"
+      ],
+      "conditionalOn": "nestAdapter"
+    },
+    {
+      "role": 8,
+      "target": "vault",
+      "functions": [
+        "deposit(uint256,address)",
+        "mint(uint256,address)"
+      ],
+      "conditionalOn": "nestAdapter"
+    },
+    {
+      "role": 11,
+      "target": "vault",
+      "functions": [
+        "fulfillRedeem(address,uint256)"
+      ]
+    },
+    {
+      "role": 12,
+      "target": "vault",
+      "functions": [
+        "fulfillRedeem(address,uint256)",
+        "instantRedeem(uint256,address,address)",
+        "requestRedeem(uint256,address,address)",
+        "updateRedeem(uint256,address,address)",
+        "redeem(uint256,address,address)",
+        "send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)"
+      ]
+    },
+    {
+      "role": 11,
+      "target": "composer",
+      "functions": [
+        "fulfillRedeem(uint32,bytes32,uint256)"
+      ],
+      "conditionalOn": "composer"
+    },
+    {
+      "role": 14,
+      "target": "composer",
+      "functions": [
+        "updateRequestRedeemAndSend(uint32,bytes32,(uint32,bytes32,uint256,uint256,bytes,bytes,bytes),address)",
+        "finishRedeemAndSend(uint32,bytes32,(uint32,bytes32,uint256,uint256,bytes,bytes,bytes),address)"
+      ],
+      "conditionalOn": "composer"
+    },
+    {
+      "role": 0,
+      "target": "composer",
+      "functions": [
+        "blockCompose(bytes32)",
+        "setMaxRetryableValue(uint256)",
+        "recover(address,uint256,bytes)"
+      ],
+      "conditionalOn": "composer"
+    },
+    {
+      "role": 13,
+      "target": "composer",
+      "functions": [
+        "depositAndSend(bytes32,uint256,(uint32,bytes32,uint256,uint256,bytes,bytes,bytes),address)",
+        "redeemAndSend(bytes32,uint256,(uint32,bytes32,uint256,uint256,bytes,bytes,bytes),address)"
+      ],
+      "conditionalOn": "composer"
+    },
+    {
+      "role": 15,
+      "target": "share",
+      "functions": [
+        "enter(address,address,uint256,address,uint256)",
+        "exit(address,address,uint256,address,uint256)"
+      ],
+      "conditionalOn": "shareSeizer"
+    }
+  ],
+  "publicCapabilities": [
+    {
+      "target": "vault",
+      "functions": [
+        "instantRedeem(uint256,address,address)",
+        "instantRedeemWithPermit2(uint256,address,address,uint256,uint256,bytes)",
+        "requestRedeem(uint256,address,address)",
+        "requestRedeemWithPermit2(uint256,address,address,uint256,uint256,bytes)",
+        "updateRedeem(uint256,address,address)",
+        "redeem(uint256,address,address)",
+        "withdraw(uint256,address,address)",
+        "send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)"
+      ]
+    },
+    {
+      "target": "vault",
+      "functions": [
+        "deposit(uint256,address)",
+        "mint(uint256,address)"
+      ],
+      "conditionalOn": "noPredicateProxy"
+    },
+    {
+      "target": "composer",
+      "functions": [
+        "depositAndSend(uint256,(uint32,bytes32,uint256,uint256,bytes,bytes,bytes),address)",
+        "redeemAndSend(uint256,(uint32,bytes32,uint256,uint256,bytes,bytes,bytes),address)"
+      ],
+      "conditionalOn": "composer"
+    }
+  ],
+  "roleAssignments": [
+    { "user": "vault", "role": 3 },
+    { "user": "predicateProxy", "role": 7, "conditionalOn": "predicateProxy" },
+    { "user": "composer", "role": 12, "conditionalOn": "composer" },
+    { "user": "cctpRelayer", "role": 13, "conditionalOn": "cctpRelayer" },
+    { "user": "MANAGER_ROLE", "role": 2 },
+    { "user": "UPDATE_EXCHANGE_RATE_ROLE", "role": 4 },
+    { "user": "KEEPER_ROLE", "role": 14, "conditionalOn": "composer" },
+    { "user": "CAN_SOLVE_ROLE", "role": 11 },
+    { "user": "redeemOperator", "role": 11, "conditionalOn": "redeemOperator" },
+    { "user": "shareSeizer", "role": 15, "conditionalOn": "shareSeizer" },
+    { "user": "owner", "role": 6 },
+    { "user": "owner", "role": 0 },
+    { "user": "nestAdapter", "role": 5, "conditionalOn": "nestAdapter" },
+    { "user": "nestAdapter", "role": 8, "conditionalOn": "nestAdapter" },
+    { "user": "nestUnlooper", "role": 5, "conditionalOn": "nestUnlooper" }
+  ],
+  "revokeRoleAssignments": [
+    { "user": "0xB7e21EcEc8cA083AcEfb465048EDc604328d39A2", "role": 5 },
+    { "user": "0x732ecb959599Fd23c9242C804B2EC98EF53eb7ED", "role": 5 }
+  ]
+}

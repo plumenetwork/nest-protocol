@@ -34,10 +34,13 @@ interface INestVaultComposer is IVaultComposerSync {
         external
         payable;
 
-    /// @notice Toggle compose blocking for a specific LayerZero guid
-    /// @param _guid    bytes32 LayerZero compose guid
-    /// @param _blocked bool    Block status to set
-    function setBlockCompose(bytes32 _guid, bool _blocked) external;
+    /// @notice Block compose execution for a specific LayerZero guid
+    /// @param _guid bytes32 LayerZero compose guid
+    function blockCompose(bytes32 _guid) external;
+
+    /// @notice Unblock compose execution for a specific LayerZero guid
+    /// @param _guid bytes32 LayerZero compose guid
+    function unblockCompose(bytes32 _guid) external;
 
     /// @notice Set the maximum minMsgValue considered retryable in lzCompose
     /// @param _maxRetryableValue New retryable threshold

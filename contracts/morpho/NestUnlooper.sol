@@ -96,6 +96,8 @@ contract NestUnlooper is Auth {
     event UnloopRequestCleared(address indexed user, bytes32 indexed marketId);
 
     /// @notice Emitted after an async unloop bundle executes.
+    /// @dev Build-time plan values, not executed amounts; looped/full-exit deleverages may diverge.
+    ///      Derive actual totals from the bundle calls or Morpho events.
     /// @param user Position owner.
     /// @param marketId Morpho market id.
     /// @param repay Loan assets repaid on Morpho.

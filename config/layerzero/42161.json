@@ -1,0 +1,46 @@
+{
+  "chainId": 42161,
+  "eid": 30110,
+  "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+  "sendLib302": "0x975bcD720be66659e3EB3C0e4F1866a3020E493A",
+  "receiveLib302": "0x7B9E184e07a6EE1aC23eAe0fe8D6Be2f663f05e6",
+  "executor": "0x0000000000000000000000000000000000000000",
+  "delegate": "0x0000000000000000000000000000000000000000",
+  "dvns": {
+    "98866": {
+      "lz": "0x2f55c492897526677c5b68fb199ea31e2c126416",
+      "nethermind": "0xa7b5189bca84cd304d8553977c7c614329750d99",
+      "canary":  "0xf2e380c90e6c09721297526dbc74f870e114dfcb"
+    },
+    "1": {
+      "lz": "0x2f55c492897526677c5b68fb199ea31e2c126416",
+      "nethermind": "0xa7b5189bca84cd304d8553977c7c614329750d99",
+      "canary":  "0xf2e380c90e6c09721297526dbc74f870e114dfcb"
+    },
+    "56": {
+      "lz": "0x2f55c492897526677c5b68fb199ea31e2c126416",
+      "nethermind": "0xa7b5189bca84cd304d8553977c7c614329750d99",
+      "canary":  "0xf2e380c90e6c09721297526dbc74f870e114dfcb"
+    },
+    "9745": {
+      "lz": "0x2f55c492897526677c5b68fb199ea31e2c126416",
+      "nethermind": "0xa7b5189bca84cd304d8553977c7c614329750d99",
+      "canary":  "0xf2e380c90e6c09721297526dbc74f870e114dfcb"
+    },
+    "480": {
+      "lz": "0x2f55c492897526677c5b68fb199ea31e2c126416",
+      "nethermind": "0xa7b5189bca84cd304d8553977c7c614329750d99",
+      "canary":  "0xf2e380c90e6c09721297526dbc74f870e114dfcb"
+    },
+    "101": {
+      "lz": "0x2f55c492897526677c5b68fb199ea31e2c126416",
+      "nethermind": "0xa7b5189bca84cd304d8553977c7c614329750d99",
+      "canary":  "0xf2e380c90e6c09721297526dbc74f870e114dfcb"
+    }
+  },
+  "enforcedOptions": {
+    "receive": { "gas": 200000, "msgValue": 0 },
+    "send": { "gas": 200000, "msgValue": 0 },
+    "compose": { "gas": 250000, "msgValue": 0 }
+  }
+}

@@ -114,7 +114,7 @@ contract DeployNestCCTPRelayerAndComposer is BaseScript {
 
         RolesAuthority rolesAuthority = RolesAuthority(authority);
 
-        NestCCTPRelayer nestCCTPRelayer = NestCCTPRelayer(address(cctpProxy));
+        NestCCTPRelayer nestCCTPRelayer = NestCCTPRelayer(payable(address(cctpProxy)));
         NestVaultComposer nestVaultComposer = NestVaultComposer(payable(address(composerProxy)));
 
         // Configure NestCCTPRelayer

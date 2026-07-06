@@ -88,7 +88,11 @@ contract BundleBuildLibHarness {
     ) external view returns (Bundle memory) {
         intent.mode = PositionMode.Delta;
         intent.delta = MarketActions({
-            borrow: borrow, repay: repay, supplyCollateral: supplyCollateral, withdrawCollateral: withdrawCollateral
+            borrow: borrow,
+            repay: repay,
+            flashRepay: 0,
+            supplyCollateral: supplyCollateral,
+            withdrawCollateral: withdrawCollateral
         });
         return BundleBuildLib.getBundle(ctx, intent, route);
     }
@@ -216,7 +220,8 @@ contract BundleBuildLibTest is Test {
     }
 
     function test_getRequiredLoanAssets_noRepayUsesBorrowToOffsetDeposit() external view {
-        MarketActions memory ma = MarketActions({repay: 0, borrow: 60, withdrawCollateral: 0, supplyCollateral: 0});
+        MarketActions memory ma =
+            MarketActions({repay: 0, flashRepay: 0, borrow: 60, withdrawCollateral: 0, supplyCollateral: 0});
         VaultActions memory va =
             VaultActions({mint: 0, deposit: 50, redeem: 0, withdraw: 0, pullAssets: 0, pullShares: 0});
 
@@ -229,7 +234,8 @@ contract BundleBuildLibTest is Test {
     }
 
     function test_getRequiredLoanAssets_withRepayAndLowWithdrawCollateralReturnsBothRequirements() external {
-        MarketActions memory ma = MarketActions({repay: 40, borrow: 0, withdrawCollateral: 10, supplyCollateral: 0});
+        MarketActions memory ma =
+            MarketActions({repay: 40, flashRepay: 40, borrow: 0, withdrawCollateral: 10, supplyCollateral: 0});
         VaultActions memory va =
             VaultActions({mint: 0, deposit: 20, redeem: 0, withdraw: 0, pullAssets: 0, pullShares: 0});
 
@@ -242,6 +248,69 @@ contract BundleBuildLibTest is Test {
         assertEq(requiredLoanAssets, 60);
         assertEq(requiredDepositLoanAssets, 20);
         assertEq(requiredRepayLoanAssets, 30);
+    }
+
+    function test_getRequiredLoanAssets_keepCollateralFullExit_fundsBufferedRepay() external view {
+        // No collateral withdrawn: there is no flash loan, so the owner funds the buffered repay (`flashRepay`).
+        MarketActions memory ma =
+            MarketActions({repay: 1000, flashRepay: 1001, borrow: 0, withdrawCollateral: 0, supplyCollateral: 0});
+        VaultActions memory va =
+            VaultActions({mint: 0, deposit: 0, redeem: 0, withdraw: 0, pullAssets: 0, pullShares: 0});
+
+        (uint256 requiredLoanAssets, uint256 requiredDepositLoanAssets, uint256 requiredRepayLoanAssets) =
+            harness.getRequiredLoanAssets(_context(OWNER, OWNER), ma, va, _route());
+
+        assertEq(requiredLoanAssets, 1001);
+        assertEq(requiredDepositLoanAssets, 0);
+        assertEq(requiredRepayLoanAssets, 1001, "owner funds the +10bps buffer when no collateral is withdrawn");
+    }
+
+    function test_getRequiredLoanAssets_withdrawingFullExit_fundsUnbufferedRepay() external {
+        // Collateral withdrawn: owner funds the un-buffered debt; the buffer is flash-borrowed, not owner-funded.
+        MarketActions memory ma =
+            MarketActions({repay: 1000, flashRepay: 1001, borrow: 0, withdrawCollateral: 200, supplyCollateral: 0});
+        VaultActions memory va =
+            VaultActions({mint: 0, deposit: 0, redeem: 0, withdraw: 0, pullAssets: 0, pullShares: 0});
+
+        // Redeeming the 200 withdrawn collateral yields 200 loan assets (1:1, no fee).
+        _mockPreviewFulfillRedeem(200, 200, 0);
+
+        (uint256 requiredLoanAssets, uint256 requiredDepositLoanAssets, uint256 requiredRepayLoanAssets) =
+            harness.getRequiredLoanAssets(_context(OWNER, OWNER), ma, va, _route());
+
+        assertEq(requiredLoanAssets, 1001);
+        assertEq(requiredDepositLoanAssets, 0);
+        // Funding base is `ma.repay` (1000), not `flashRepay`; redeem covers 200, so the owner funds 800.
+        assertEq(requiredRepayLoanAssets, 800, "owner funds un-buffered debt minus redeem proceeds");
+    }
+
+    function test_getTargetBundle_keepCollateralFullExit_ownerFundsBufferedRepay() external {
+        // Target loan == 0 while keeping all collateral: full repay with no withdraw and no flash loan.
+        _setPosition(1000, 500);
+
+        UserIntent memory intent = _intent();
+        intent.assetAllowance = type(uint256).max;
+
+        Bundle memory bundle = harness.getTargetBundle(_context(OWNER, OWNER), intent, _route(), 0, 500);
+
+        assertEq(bundle.ma.repay, 1000, "repay stays the real debt");
+        assertEq(bundle.ma.flashRepay, 1001, "flashRepay carries the +10bps buffer");
+        assertEq(bundle.ma.withdrawCollateral, 0);
+        assertEq(bundle.va.pullAssets, 1001, "owner funds the buffered repay");
+        assertEq(_flashLoanAssets(bundle), 0, "buffer is owner-funded, so no flash loan is triggered");
+        assertEq(bundle.va.redeem, 0, "no redeem on a keep-collateral exit");
+    }
+
+    function test_getTargetBundle_keepCollateralFullExit_revertsWhenBalanceBelowBuffer() external {
+        // Owner holds exactly the un-buffered debt: one short of the buffered amount the close now requires.
+        _setPosition(1000, 500);
+        _setOwnerBalances(1000, 1_000_000e18);
+
+        UserIntent memory intent = _intent();
+        intent.assetAllowance = type(uint256).max;
+
+        vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.InsufficientOwnerLoanAssets.selector, 1000, 1001));
+        harness.getTargetBundle(_context(OWNER, OWNER), intent, _route(), 0, 500);
     }
 
     function test_getTargetBundle_buildsExpectedActionsAndVaultLegs() external {
@@ -273,7 +342,7 @@ contract BundleBuildLibTest is Test {
         UserIntent memory intent = _intent();
         intent.maxSharePriceE27 = type(uint256).max;
         intent.mode = PositionMode.Delta;
-        intent.delta = MarketActions({borrow: 0, repay: 20, supplyCollateral: 0, withdrawCollateral: 50});
+        intent.delta = MarketActions({borrow: 0, flashRepay: 0, repay: 20, supplyCollateral: 0, withdrawCollateral: 50});
 
         Bundle memory bundle = harness.getAsyncBundle(_context(OWNER, ALT_INITIATOR), intent, true);
 
@@ -415,7 +484,7 @@ contract BundleBuildLibTest is Test {
         RouteInput memory route = _route();
         route.instantRedeem = true;
 
-        vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.InsufficientInstantRedeemLiquidity.selector, 10, 9));
+        vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.InsufficientRedeemLiquidity.selector, 10, 9));
         harness.getTargetBundle(_context(OWNER, OWNER), _intent(), route, 30, 50);
     }
 
@@ -628,7 +697,7 @@ contract BundleBuildLibTest is Test {
     }
 
     function _flashLoanAssets(Bundle memory bundle) internal pure returns (uint256) {
-        uint256 requiredLoanAssets = bundle.ma.repay + bundle.va.deposit;
+        uint256 requiredLoanAssets = bundle.ma.flashRepay + bundle.va.deposit;
         if (bundle.va.pullAssets >= requiredLoanAssets) return 0;
         return requiredLoanAssets - bundle.va.pullAssets;
     }

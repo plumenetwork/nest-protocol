@@ -1,0 +1,131 @@
+{
+  "contracts": [
+    {
+      "contract": {
+        "eid": 30370,
+        "contractName": "nTEST",
+        "address": "0x802E1f92A6890430bCF350Ad553C936fA425266c"
+      }
+    },
+    {
+      "contract": {
+        "eid": 30168,
+        "address": "7kqVy9Z6ejv4oEGddWSAezdLQdMmMQko626m7166kj39"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "eid": 30370,
+        "contractName": "nTEST",
+        "address": "0x802E1f92A6890430bCF350Ad553C936fA425266c"
+      },
+      "to": {
+        "eid": 30168,
+        "address": "7kqVy9Z6ejv4oEGddWSAezdLQdMmMQko626m7166kj39"
+      },
+      "config": {
+        "sendLibrary": "0xFe7C30860D01e28371D40434806F4A8fcDD3A098",
+        "receiveLibraryConfig": {
+          "receiveLibrary": "0x5B19bd330A84c049b62D5B0FC2bA120217a18C1C",
+          "gracePeriod": "0"
+        },
+        "sendConfig": {
+          "executorConfig": {
+            "maxMessageSize": 10000,
+            "executor": "0x41Bdb4aa4A63a5b2Efc531858d3118392B1A1C3d"
+          },
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3",
+              "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+              "0x882a1ee8891c7d22310dedf032ef9653785532b8"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "enforcedOptions": [
+          {
+            "msgType": 1,
+            "optionType": 1,
+            "gas": 200000,
+            "value": 2039280
+          }
+        ]
+      }
+    },
+    {
+      "from": {
+        "eid": 30168,
+        "address": "7kqVy9Z6ejv4oEGddWSAezdLQdMmMQko626m7166kj39"
+      },
+      "to": {
+        "eid": 30370,
+        "contractName": "nTEST",
+        "address": "0x802E1f92A6890430bCF350Ad553C936fA425266c"
+      },
+      "config": {
+        "sendLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
+        "receiveLibraryConfig": {
+          "receiveLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
+          "gracePeriod": "0"
+        },
+        "receiveConfig": {
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
+              "7jMeX5mzXnSSKYd8DxBDP4xMnkNFZZZm5W28FWUTbwU3",
+              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "sendConfig": {
+          "executorConfig": {
+            "maxMessageSize": 10000,
+            "executor": "AwrbHeCyniXaQhiJZkLhgWdUCteeWSGaSN1sTfLiY7xK"
+          },
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
+              "7jMeX5mzXnSSKYd8DxBDP4xMnkNFZZZm5W28FWUTbwU3",
+              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "enforcedOptions": [
+          {
+            "msgType": 1,
+            "optionType": 1,
+            "gas": 100000,
+            "value": 0
+          },
+          {
+            "msgType": 2,
+            "optionType": 1,
+            "gas": 350000,
+            "value": 0
+          },
+          {
+            "msgType": 2,
+            "optionType": 3,
+            "index": 0,
+            "gas": 350000,
+            "value": 0
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
+  "bundler3": "0x6566194141eefa99Af43Bb5Aa71460Ca2Dc90245",
+  "wrappedNative": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  "atomicSolver": "0x77fb098A1C28a5b50BFAdb69Ca1bEE515a7FC974",
+  "atomicQueue": "0x220dc6d4569C1F406D532f9633D5Be5Bc86e8264",
+  "legacyPredicateProxy": "0x6104fe10ca937a086ba7AdbD0910A4733d380cB6"
+}

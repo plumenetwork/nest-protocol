@@ -140,6 +140,7 @@ library NestVaultRedeemLogic {
         }
         if (_feeAmount > 0) {
             $.claimableFees[NestVaultCoreTypes.Fees.Redemption] += _feeAmount;
+            emit NestVaultCoreTypes.FeeAccrued(uint8(NestVaultCoreTypes.Fees.Redemption), _controller, _feeAmount);
         }
 
         // Update state
@@ -193,6 +194,7 @@ library NestVaultRedeemLogic {
         // Transfer instant redemption fees directly to the share token (benefits holders via exchange rate)
         if (_feeAmount > 0) {
             assetToken.safeTransferFrom(address(this), address(shareToken), _feeAmount);
+            emit NestVaultCoreTypes.FeeAccrued(uint8(NestVaultCoreTypes.Fees.InstantRedemption), _owner, _feeAmount);
         }
 
         emit InstantRedeem(_shares, _assets, _postFeeAmount, _receiver);

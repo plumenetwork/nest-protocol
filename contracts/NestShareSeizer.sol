@@ -129,7 +129,7 @@ contract NestShareSeizer is Auth {
     }
 
     /// @notice Returns whether this contract can perform seize operations for a share.
-    /// @dev    Checks the hook authority for `setBlacklisted` and the share authority for `enter` and `exit`.
+    /// @dev    Checks the hook authority for `blacklist` and the share authority for `enter` and `exit`.
     /// @param  share    NestShareOFT The share token to seize from.
     /// @return bool     Whether this contract can call all required functions.
     function canSeize(NestShareOFT share) external view returns (bool) {
@@ -140,12 +140,11 @@ contract NestShareSeizer is Auth {
 
         BlacklistHook hook = BlacklistHook(hookAddress);
 
-        bool canSetBlacklist =
-            _canCall(hook.authority(), address(this), address(hook), BlacklistHook.setBlacklisted.selector);
+        bool canBlacklist = _canCall(hook.authority(), address(this), address(hook), BlacklistHook.blacklist.selector);
         bool canExit = _canCall(share.authority(), address(this), address(share), NestShareOFT.exit.selector);
         bool canEnter = _canCall(share.authority(), address(this), address(share), NestShareOFT.enter.selector);
 
-        return canSetBlacklist && canExit && canEnter;
+        return canBlacklist && canExit && canEnter;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -182,7 +181,11 @@ contract NestShareSeizer is Auth {
     /// @param _blacklist bool          Whether the account should be blacklisted.
     function _setBlacklist(BlacklistHook hook, address from, bool _blacklist) internal {
         if (hook.isBlacklisted(from) != _blacklist) {
-            hook.setBlacklisted(from, _blacklist);
+            if (_blacklist) {
+                hook.blacklist(from);
+            } else {
+                hook.unblacklist(from);
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ import {VaultComposerSyncUpgradeable} from "./VaultComposerSyncUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOFT, SendParam, MessagingFee} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {IVaultComposerSync} from "@layerzerolabs/ovault-evm/contracts/interfaces/IVaultComposerSync.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 
 // libraries
@@ -34,6 +35,40 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
     /// @param maxRetryableValue New maximum retryable minMsgValue
     event MaxRetryableValueSet(uint256 maxRetryableValue);
 
+    /// @notice Emitted when shares are queued for async redemption via IERC7540
+    /// @param redeemer          bytes32 User identifier / main account (bytes32 to support non-EVM addresses)
+    /// @param receiver          bytes32 Asset receiver / token account that controls this request in composer context
+    /// @param srcEid            uint32  Source endpoint ID
+    /// @param shares            uint256 Shares queued in this request
+    /// @param userPendingShares uint256 The (redeemer, receiver) pair's total pending shares after this request
+    event RedeemRequested(
+        bytes32 indexed redeemer,
+        bytes32 indexed receiver,
+        uint32 indexed srcEid,
+        uint256 shares,
+        uint256 userPendingShares
+    );
+
+    /// @notice Emitted when a pending redemption request is reduced and excess shares returned to the redeemer
+    /// @param redeemer  bytes32 User identifier / main account
+    /// @param receiver  bytes32 Asset receiver / token account identifying the request bucket
+    /// @param srcEid    uint32  Source endpoint ID
+    /// @param oldShares uint256 Pending shares before the update
+    /// @param newShares uint256 Pending shares after the update
+    event RedeemRequestUpdated(
+        bytes32 indexed redeemer, bytes32 indexed receiver, uint32 indexed srcEid, uint256 oldShares, uint256 newShares
+    );
+
+    /// @notice Emitted when a pending redemption is fulfilled and assets are made claimable
+    /// @param redeemer bytes32 User identifier / main account
+    /// @param receiver bytes32 Asset receiver / token account identifying the request bucket
+    /// @param srcEid   uint32  Source endpoint ID
+    /// @param shares   uint256 Shares fulfilled
+    /// @param assets   uint256 Assets made claimable for the user
+    event RedeemFulfilled(
+        bytes32 indexed redeemer, bytes32 indexed receiver, uint32 indexed srcEid, uint256 shares, uint256 assets
+    );
+
     /// @notice Revert when a blocked compose guid is retried
     /// @param guid bytes32 LayerZero compose guid
     error ComposeBlocked(bytes32 guid);
@@ -55,10 +90,10 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         uint256 maxRetryableValue;
         /// @dev Pending shares per endpoint
         mapping(uint32 eid => uint256 shares) totalPendingShares;
-        /// @dev Per-user pending redemption tracking (redeemer => eid => PendingRedeem)
-        mapping(bytes32 redeemer => mapping(uint32 eid => NestVaultCoreTypes.PendingRedeem)) pendingRedeem;
-        /// @dev Per-user claimable balance tracking (redeemer => eid => ClaimableRedeem)
-        mapping(bytes32 redeemer => mapping(uint32 eid => NestVaultCoreTypes.ClaimableRedeem)) claimableRedeem;
+        /// @dev Per-pair pending redemption tracking (keccak256(redeemer, receiver) => eid => PendingRedeem).
+        mapping(bytes32 pairKey => mapping(uint32 eid => NestVaultCoreTypes.PendingRedeem)) pendingRedeem;
+        /// @dev Per-pair claimable balance tracking (keccak256(redeemer, receiver) => eid => ClaimableRedeem).
+        mapping(bytes32 pairKey => mapping(uint32 eid => NestVaultCoreTypes.ClaimableRedeem)) claimableRedeem;
         /// @dev Per-guid compose block switch
         mapping(bytes32 guid => bool blocked) composeBlocked;
     }
@@ -86,6 +121,15 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         assembly {
             $.slot := VaultComposerAsyncUpgradeableStorageLocation
         }
+    }
+
+    /// @dev Derives the composer bookkeeping key for a (redeemer, receiver) pair.
+    ///      Both operands are fixed bytes32, so the encoding is collision-free.
+    /// @param _redeemer bytes32 Main account
+    /// @param _receiver bytes32 Asset receiver / token account
+    /// @return key bytes32 The pair key used in pendingRedeem/claimableRedeem mappings
+    function _getKey(bytes32 _redeemer, bytes32 _receiver) internal pure returns (bytes32 key) {
+        return keccak256(abi.encode(_redeemer, _receiver));
     }
 
     constructor() {
@@ -124,32 +168,34 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         return _getVaultComposerAsyncStorage().totalFulfilledAssetsSum;
     }
 
-    /// @notice Pending redeem for a redeemer on a specific endpoint
-    /// @dev Reads from async storage nested mapping
-    /// @param _redeemer bytes32 Redeemer identifier
+    /// @notice Pending redeem for a (redeemer, receiver) pair on a specific endpoint
+    /// @dev Reads from async storage nested mapping keyed by keccak256(redeemer, receiver)
+    /// @param _redeemer bytes32 Main account identifier
+    /// @param _receiver bytes32 Asset receiver / token account identifier
     /// @param _eid      uint32  Endpoint ID
-    /// @return NestVaultCoreTypes.PendingRedeem Pending redeem data
-    function pendingRedeem(bytes32 _redeemer, uint32 _eid)
+    /// @return NestVaultCoreTypes.PendingRedeem Pending redeem data for the pair
+    function pendingRedeem(bytes32 _redeemer, bytes32 _receiver, uint32 _eid)
         public
         view
         virtual
         returns (NestVaultCoreTypes.PendingRedeem memory)
     {
-        return _getVaultComposerAsyncStorage().pendingRedeem[_redeemer][_eid];
+        return _getVaultComposerAsyncStorage().pendingRedeem[_getKey(_redeemer, _receiver)][_eid];
     }
 
-    /// @notice Claimable redeem for a redeemer on a specific endpoint
-    /// @dev Reads from async storage nested mapping
-    /// @param _redeemer bytes32                   Redeemer identifier
-    /// @param _eid      uint32                    Endpoint ID
-    /// @return          NestVaultCoreTypes.ClaimableRedeem Claimable redeem data
-    function claimableRedeem(bytes32 _redeemer, uint32 _eid)
+    /// @notice Claimable redeem for a (redeemer, receiver) pair on a specific endpoint
+    /// @dev Reads from async storage nested mapping keyed by keccak256(redeemer, receiver)
+    /// @param _redeemer bytes32 Main account identifier
+    /// @param _receiver bytes32 Asset receiver / token account identifier
+    /// @param _eid      uint32  Endpoint ID
+    /// @return          NestVaultCoreTypes.ClaimableRedeem Claimable redeem data for the pair
+    function claimableRedeem(bytes32 _redeemer, bytes32 _receiver, uint32 _eid)
         public
         view
         virtual
         returns (NestVaultCoreTypes.ClaimableRedeem memory)
     {
-        return _getVaultComposerAsyncStorage().claimableRedeem[_redeemer][_eid];
+        return _getVaultComposerAsyncStorage().claimableRedeem[_getKey(_redeemer, _receiver)][_eid];
     }
 
     /// @notice Returns whether compose execution is blocked for a guid
@@ -272,15 +318,19 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
     ) internal virtual {
         RedeemType _redeemType = _decodeRedeemType(_sendParam.oftCmd);
 
+        if (_sendParam.to == bytes32(0)) revert Errors.InvalidReceiver();
+
         if (_redeemType == RedeemType.InstantRedeem) {
             _redeemAndSend(_composeFrom, _amount, _sendParam, _refundAddress, _msgValue);
         } else if (_redeemType == RedeemType.RequestRedeem) {
-            _requestRedeem(_srcEid, _composeFrom, _amount);
+            _requestRedeem(_srcEid, _composeFrom, _sendParam, _amount);
         } else if (_redeemType == RedeemType.FinishRedeem) {
             if (_amount > 0) revert Errors.UnexpectedNonZeroAmount();
             _finishRedeemAndSend(_srcEid, _composeFrom, _sendParam, _refundAddress, _msgValue);
         } else if (_redeemType == RedeemType.UpdateRedeemRequest) {
             if (_amount > 0) revert Errors.UnexpectedNonZeroAmount();
+            // the callee captures the receiver from SendParam.to, then overrides SendParam.to to the redeemer
+            // so the returned shares go to the main account, not the token account.
             _updateRequestRedeemAndSend(_srcEid, _composeFrom, _sendParam, _refundAddress, _msgValue);
         }
     }
@@ -300,26 +350,37 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         redeemType = RedeemType(rawType);
     }
 
-    /// @dev Queues shares for async redemption via IERC7540
-    /// @param _srcEid      uint32  Source endpoint ID
-    /// @param _redeemer    bytes32 User identifier
-    /// @param _shareAmount uint256 Shares to queue
-    function _requestRedeem(uint32 _srcEid, bytes32 _redeemer, uint256 _shareAmount) internal virtual {
+    /// @dev Queues shares for async redemption via IERC7540 under the (redeemer, receiver) pair
+    /// @param _srcEid      uint32    Source endpoint ID
+    /// @param _redeemer    bytes32   Main account that requested the redemption
+    /// @param _sendParam   SendParam Carries the receiver (asset/token account) in SendParam.to
+    /// @param _shareAmount uint256   Shares to queue
+    function _requestRedeem(uint32 _srcEid, bytes32 _redeemer, SendParam memory _sendParam, uint256 _shareAmount)
+        internal
+        virtual
+    {
+        bytes32 _receiver = _sendParam.to;
         VaultComposerAsyncStorage storage $ = _getVaultComposerAsyncStorage();
 
         $.totalPendingSharesSum += _shareAmount;
         $.totalPendingShares[_srcEid] += _shareAmount;
-        uint256 _currentPendingShares = $.pendingRedeem[_redeemer][_srcEid].shares;
-        $.pendingRedeem[_redeemer][_srcEid] =
-            NestVaultCoreTypes.PendingRedeem({shares: _shareAmount + _currentPendingShares});
 
+        bytes32 _key = _getKey(_redeemer, _receiver);
+        uint256 _newPendingShares = $.pendingRedeem[_key][_srcEid].shares + _shareAmount;
+        $.pendingRedeem[_key][_srcEid] = NestVaultCoreTypes.PendingRedeem({shares: _newPendingShares});
+
+        /// @dev Vault-side controller stays address(this); the pair only matters to composer bookkeeping.
         INestVaultCore(address(VAULT())).requestRedeem(_shareAmount, address(this), address(this));
+
+        emit RedeemRequested(_redeemer, _receiver, _srcEid, _shareAmount, _newPendingShares);
     }
 
-    /// @dev Updates pending redemption. Returns excess shares to user if reducing.
+    /// @dev Updates pending redemption for a (redeemer, receiver) pair. Returns excess shares to the redeemer if reducing.
+    /// @dev SendParam.to carries the receiver (bucket key) on input; it is captured before being overridden to the
+    ///      redeemer so the returned SHARES go to the main account (sending shares to the token account would strand them).
     /// @param _srcEid        uint32    Source endpoint ID
-    /// @param _redeemer      bytes32   User identifier
-    /// @param _sendParam     SendParam New share amount in amountLD
+    /// @param _redeemer      bytes32   Main account that owns the request (and receives the returned shares)
+    /// @param _sendParam     SendParam New share amount in amountLD; carries the receiver in SendParam.to on input
     /// @param _refundAddress address   LZ fee refund address
     /// @param _msgValue      uint256   Native value for LZ fees
     function _updateRequestRedeemAndSend(
@@ -329,8 +390,10 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         address _refundAddress,
         uint256 _msgValue
     ) internal virtual {
+        bytes32 _receiver = _sendParam.to;
         VaultComposerAsyncStorage storage $ = _getVaultComposerAsyncStorage();
-        uint256 _oldShares = $.pendingRedeem[_redeemer][_srcEid].shares;
+        bytes32 _key = _getKey(_redeemer, _receiver);
+        uint256 _oldShares = $.pendingRedeem[_key][_srcEid].shares;
         if (_oldShares == 0) {
             revert Errors.NoPendingRedeem();
         }
@@ -347,19 +410,28 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         uint256 _returnAmount = _oldShares - _newShares;
         IERC20 shareErc20 = IERC20(SHARE_ERC20());
 
-        $.pendingRedeem[_redeemer][_srcEid] = NestVaultCoreTypes.PendingRedeem({shares: _newShares});
+        $.pendingRedeem[_key][_srcEid] = NestVaultCoreTypes.PendingRedeem({shares: _newShares});
         $.totalPendingSharesSum -= _returnAmount;
         $.totalPendingShares[_srcEid] -= _returnAmount;
 
+        // Drive updateRedeem off the vault's LIVE pending, not the composer aggregate
+        uint256 livePending = INestVaultCore(address(VAULT())).pendingRedeemRequest(0, address(this));
+        if (livePending < _returnAmount) {
+            revert Errors.PendingAlreadyFulfilled(_returnAmount, livePending);
+        }
+
         uint256 preShareBalance = shareErc20.balanceOf(address(this));
-        INestVaultCore(address(VAULT())).updateRedeem($.totalPendingSharesSum, address(this), address(this));
+        INestVaultCore(address(VAULT())).updateRedeem(livePending - _returnAmount, address(this), address(this));
         uint256 postShareBalance = shareErc20.balanceOf(address(this));
 
-        if (_returnAmount > postShareBalance - preShareBalance) {
+        if (postShareBalance - preShareBalance != _returnAmount) {
             revert Errors.TransferInsufficient();
         }
 
-        // Update sendParam with the actual return amount for the cross-chain send
+        emit RedeemRequestUpdated(_redeemer, _receiver, _srcEid, _oldShares, _newShares);
+
+        /// @dev Returned shares go to the redeemer (main account), NOT the receiver token account
+        _sendParam.to = _redeemer;
         _sendParam.oftCmd = new bytes(0);
         _sendParam.amountLD = _returnAmount;
         _sendParam.minAmountLD = 0;
@@ -367,10 +439,10 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         _send(SHARE_OFT(), _sendParam, _refundAddress, _msgValue);
     }
 
-    /// @dev Redeems claimable shares and sends assets cross-chain
+    /// @dev Redeems claimable shares for a (redeemer, receiver) pair and sends assets cross-chain to the receiver
     /// @param _srcEid        uint32    Source endpoint ID
-    /// @param _redeemer      bytes32   User identifier
-    /// @param _sendParam     SendParam Share amount and destination
+    /// @param _redeemer      bytes32   Main account claiming the redemption (must own the request bucket)
+    /// @param _sendParam     SendParam Share amount in amountLD; carries the receiver / asset destination in SendParam.to
     /// @param _refundAddress address   LZ fee refund address
     /// @param _msgValue      uint256   Native value for LZ fees
     function _finishRedeemAndSend(
@@ -380,6 +452,7 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         address _refundAddress,
         uint256 _msgValue
     ) internal virtual {
+        bytes32 _receiver = _sendParam.to;
         VaultComposerAsyncStorage storage $ = _getVaultComposerAsyncStorage();
 
         uint256 _shareAmount = _sendParam.amountLD;
@@ -389,7 +462,8 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
             revert Errors.ZeroShares();
         }
 
-        NestVaultCoreTypes.ClaimableRedeem storage _userClaimable = $.claimableRedeem[_redeemer][_srcEid];
+        NestVaultCoreTypes.ClaimableRedeem storage _userClaimable =
+            $.claimableRedeem[_getKey(_redeemer, _receiver)][_srcEid];
         if (_userClaimable.shares < _shareAmount) {
             revert Errors.InsufficientClaimable();
         }
@@ -427,7 +501,7 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         $.totalFulfilledSharesSum = $.totalFulfilledSharesSum.saturatingSub(sharesConsumed);
         $.totalFulfilledAssetsSum = $.totalFulfilledAssetsSum.saturatingSub(assetAmount);
 
-        emit Redeemed(_redeemer, _sendParam.to, _sendParam.dstEid, _shareAmount, assetAmountReceived);
+        emit Redeemed(_redeemer, _receiver, _sendParam.dstEid, _shareAmount, assetAmountReceived);
 
         // Update sendParam with the actual asset amount for the cross-chain send
         _sendParam.amountLD = assetAmountReceived;
@@ -436,19 +510,52 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         _send(ASSET_OFT(), _sendParam, _refundAddress, _msgValue);
     }
 
-    /// @dev Fulfills pending redemption: calls vault, updates tracking, credits claimable.
+    /// @dev Overrides the sync send to tolerate compose-supplied msg.value on local destinations: absorb it
+    ///      (recoverable via recover) instead of reverting NonZeroMsgValueLocal, so a dust-funded compose cannot
+    ///      fail and strand a queued zero-amount Finish/Update settlement.
+    function _send(address _oft, SendParam memory _sendParam, address _refundAddress, uint256 _msgValue)
+        internal
+        virtual
+        override
+    {
+        // Address-sized destinations truncate bytes32 receivers to 20 bytes.
+        // Use the peer width to detect address destinations and reject receivers that would truncate.
+        // Skip zero peer; let the downstream "peer not set" revert surface.
+        bytes32 _peer = IOAppCore(_oft).peers(_sendParam.dstEid);
+        bool _dstIsAddressTyped = _sendParam.dstEid == VAULT_EID() || (_peer != bytes32(0) && _fitsAddressType(_peer));
+        if (_dstIsAddressTyped && !_fitsAddressType(_sendParam.to)) revert Errors.InvalidReceiver();
+
+        if (_sendParam.dstEid == VAULT_EID()) {
+            // Compose execution runs inside the handleAsyncCompose self-call (msg.sender == this).
+            if (_msgValue != 0 && msg.sender != address(this)) revert Errors.NonZeroMsgValueLocal(_msgValue);
+            _sendLocal(_oft, _sendParam, _refundAddress, _msgValue);
+        } else {
+            _sendRemote(_oft, _sendParam, _refundAddress, _msgValue);
+        }
+    }
+
+    /// @dev True when a bytes32 identity fits in a 20-byte address (high 12 bytes empty),
+    ///      i.e. survives an address cast without truncation.
+    /// @param _id bytes32 Identity to test
+    function _fitsAddressType(bytes32 _id) private pure returns (bool) {
+        return uint256(_id) >> 160 == 0;
+    }
+
+    /// @dev Fulfills pending redemption for a (redeemer, receiver) pair: calls vault, updates tracking, credits claimable.
     ///      Guards against double-counting by detecting if vault.fulfillRedeem was called directly.
     /// @param _srcEid   uint32  Source endpoint ID
-    /// @param _redeemer bytes32 User identifier
+    /// @param _redeemer bytes32 Main account that owns the request
+    /// @param _receiver bytes32 Asset receiver / token account identifying the request bucket
     /// @param _shares   uint256 Shares to fulfill
     /// @return _assets  uint256 Assets made claimable
-    function _fulfillRedeem(uint32 _srcEid, bytes32 _redeemer, uint256 _shares)
+    function _fulfillRedeem(uint32 _srcEid, bytes32 _redeemer, bytes32 _receiver, uint256 _shares)
         internal
         virtual
         returns (uint256 _assets)
     {
         VaultComposerAsyncStorage storage $ = _getVaultComposerAsyncStorage();
-        NestVaultCoreTypes.PendingRedeem storage _request = $.pendingRedeem[_redeemer][_srcEid];
+        bytes32 _key = _getKey(_redeemer, _receiver);
+        NestVaultCoreTypes.PendingRedeem storage _request = $.pendingRedeem[_key][_srcEid];
 
         if (_request.shares == 0) {
             revert Errors.NoPendingRedeem();
@@ -505,11 +612,12 @@ contract VaultComposerAsyncUpgradeable is VaultComposerSyncUpgradeable {
         $.totalFulfilledSharesSum = totalFulfilledSharesSum + _shares;
         $.totalFulfilledAssetsSum = trackedFulfilledAssetsSum + _assets;
 
-        // Credit the claimable balance to the specific user
-        $.claimableRedeem[_redeemer][_srcEid] = NestVaultCoreTypes.ClaimableRedeem(
-            $.claimableRedeem[_redeemer][_srcEid].assets + _assets,
-            $.claimableRedeem[_redeemer][_srcEid].shares + _shares
+        // Credit the claimable balance to the specific (redeemer, receiver) pair
+        $.claimableRedeem[_key][_srcEid] = NestVaultCoreTypes.ClaimableRedeem(
+            $.claimableRedeem[_key][_srcEid].assets + _assets, $.claimableRedeem[_key][_srcEid].shares + _shares
         );
+
+        emit RedeemFulfilled(_redeemer, _receiver, _srcEid, _shares, _assets);
     }
 
     /// @dev Internal setter for compose block switch

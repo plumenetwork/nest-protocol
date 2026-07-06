@@ -1,0 +1,71 @@
+name: publish-artifacts
+
+# Compiles contracts and publishes a slim artifact + config bundle to GitHub
+# Packages (npm) so Mission Control can consume real ABIs / creation bytecode /
+# per-chain config per branch. dist-tags track the branch: `main` and `develop`
+# always point at that branch's latest build. Packages do NOT expire (unlike
+# actions/upload-artifact, which is pruned after ~90 days).
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch: # lets you publish a branch on demand once this file is on it
+
+permissions:
+  contents: read
+  packages: write # GITHUB_TOKEN may create/publish the repo-scoped package
+
+concurrency:
+  group: publish-artifacts-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build & publish @plumenetwork/nest-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@plumenetwork'
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      # Default profile (NOT the `ci` profile) so the emitted creation bytecode
+      # matches what the deploy scripts actually broadcast. FULL build (no path
+      # args): RolesAuthority (solmate, node_modules) and
+      # TransparentUpgradeableProxy/ProxyAdmin (vendored OZ 4.9.3, script/vendor)
+      # only get artifacts emitted when they are part of the full compilation
+      # set — stable forge does NOT emit them for path-scoped builds
+      # (`forge build contracts script/deploy` left all three out of out/,
+      # while the same invocation on nightly emits them). Building everything
+      # is what test.yml already exercises on CI; the bundle script fails the
+      # workflow if any required artifact is still missing.
+      - name: Compile contracts
+        run: forge build --skip contracts/operators/old/*
+
+      - name: Build artifact bundle (dist/nest-artifacts/)
+        env:
+          PKG_VERSION: 0.0.0-${{ github.ref_name }}.${{ github.run_number }}
+        run: node ts-scripts/build-artifact-bundle.mjs
+
+      - name: Publish to GitHub Packages (dist-tag = branch)
+        working-directory: dist/nest-artifacts
+        run: npm publish --tag "${GITHUB_REF_NAME}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

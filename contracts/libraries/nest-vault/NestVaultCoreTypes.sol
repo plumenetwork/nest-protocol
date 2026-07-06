@@ -87,4 +87,14 @@ library NestVaultCoreTypes {
 
     /// @dev Maximum exchange rate allowed
     uint256 internal constant UPPER_BOUND_RATE_CAP = 1e30;
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev   Emitted whenever a vault fee accrues in the asset token
+    /// @param feeType uint8   The `Fees` value (0 = InstantRedemption, 1 = Deposit, 2 = Redemption)
+    /// @param payer   address The address economically bearing the fee (share receiver for `Deposit`, share owner for `Redemption`/`InstantRedemption`)
+    /// @param amount  uint256 The fee amount accrued in asset-token smallest units
+    event FeeAccrued(uint8 indexed feeType, address indexed payer, uint256 amount);
 }

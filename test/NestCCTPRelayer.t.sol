@@ -357,6 +357,54 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         assertTrue(hookSuccess, "relay overload with extraOptions should execute hook");
     }
 
+    function test_relay_overpayment_is_refundedToRelayer() public {
+        uint256 depositAmount = 1e6;
+        bytes memory hookData =
+            _formatDepositHookDataFixed(depositAmount, 0, remoteEid, bytes32(uint256(uint160(userA))), userA);
+
+        bytes memory messageBody = _formatBurnMessageForReceive(
+            1,
+            address(remoteAsset).toBytes32(),
+            address(nestCCTPRelayer).toBytes32(),
+            depositAmount,
+            userB.toBytes32(),
+            0,
+            0,
+            0,
+            hookData
+        );
+        bytes memory message = _formatMessageForReceive(
+            1,
+            remoteDomain,
+            localDomain,
+            bytes32(keccak256(abi.encodePacked(block.timestamp, uint256(13)))),
+            address(remoteTokenMessenger).toBytes32(),
+            address(localTokenMessenger).toBytes32(),
+            address(nestCCTPRelayer).toBytes32(),
+            0,
+            FINALITY_THRESHOLD_FINALIZED,
+            messageBody
+        );
+        bytes memory attestation = _sign1of1Message(message);
+        bytes memory predicateMsg = _formatPredicateMessage("", 0, new address[](0), new bytes[](0));
+
+        MessagingFee memory fee = nestCCTPRelayer.quoteRelay(message, predicateMsg, new bytes(0));
+        uint256 overpayment = 1 ether;
+
+        vm.prank(relayer);
+        (bool relaySuccess, bool hookSuccess) =
+            nestCCTPRelayer.relay{value: fee.nativeFee + overpayment}(message, attestation, predicateMsg, false);
+
+        assertTrue(relaySuccess, "relay should succeed");
+        assertTrue(hookSuccess, "hook should execute");
+        assertEq(address(nestCCTPRelayer).balance, overpayment, "overpayment should be recoverable");
+
+        uint256 recipientBalanceBefore = userA.balance;
+        nestCCTPRelayer.recoverToken(address(0), userA, overpayment);
+        assertEq(address(nestCCTPRelayer).balance, 0, "recovered overpayment should leave the relayer");
+        assertEq(userA.balance, recipientBalanceBefore + overpayment, "recovered overpayment should reach recipient");
+    }
+
     function test_instant_redeem() public {
         // format redeem compose msg
         bytes memory composeMsg = _formatInstantRedeemComposeMsg(remoteEid, address(userB).toBytes32(), 0, 0);
@@ -483,8 +531,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         // State before lzCompose - VaultComposer state
         uint256 totalPendingSharesSumBefore = nestVaultComposer.totalPendingSharesSum();
         uint256 totalPendingSharesBefore = nestVaultComposer.totalPendingShares(remoteEid);
-        NestVaultCoreTypes.PendingRedeem memory pendingRedeemBefore =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingRedeemBefore = _composerPending(address(userB));
 
         // State before lzCompose - NestVaultOFT (NestVaultCore) state
         uint256 vaultTotalPendingSharesBefore = nestVaultOFT.totalPendingShares();
@@ -507,8 +554,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             totalPendingSharesBefore + amountReceived,
             "composer: totalPendingShares[remoteEid] should increase by amountReceived"
         );
-        NestVaultCoreTypes.PendingRedeem memory pendingRedeemAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingRedeemAfter = _composerPending(address(userB));
         assertEq(
             pendingRedeemAfter.shares,
             pendingRedeemBefore.shares + amountReceived,
@@ -579,8 +625,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify request redeem succeeded
-        uint256 pendingSharesAfterRequest =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfterRequest = _composerPending(address(userB)).shares;
         assertEq(
             pendingSharesAfterRequest, requestOftReceipt.amountReceivedLD, "Pending shares should be set after request"
         );
@@ -632,7 +677,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         uint256 totalPendingSharesSumBefore = nestVaultComposer.totalPendingSharesSum();
         uint256 totalPendingSharesBefore = nestVaultComposer.totalPendingShares(remoteEid);
         assertEq(
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares,
+            _composerPending(address(userB)).shares,
             pendingSharesAfterRequest,
             "Initial pending redeem should match initial shares"
         );
@@ -683,8 +728,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             totalPendingSharesBefore - returnAmount,
             "totalPendingShares[remoteEid] should decrease by returnAmount"
         );
-        NestVaultCoreTypes.PendingRedeem memory pendingRedeemAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingRedeemAfter = _composerPending(address(userB));
         assertEq(
             pendingRedeemAfter.shares,
             newSharesAmount,
@@ -794,8 +838,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify both requests were recorded
-        uint256 pendingSharesB = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
-        uint256 pendingSharesC = nestVaultComposer.pendingRedeem(addressToBytes32(address(userC)), remoteEid).shares;
+        uint256 pendingSharesB = _composerPending(address(userB)).shares;
+        uint256 pendingSharesC = _composerPending(address(userC)).shares;
         assertEq(pendingSharesB, requestOftReceiptB.amountReceivedLD, "userB pending shares should match");
         assertEq(pendingSharesC, requestOftReceiptC.amountReceivedLD, "userC pending shares should match");
 
@@ -872,13 +916,11 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         // set vault's pending to just newSharesAmountB, losing userC's pendingSharesC
 
         // Assert userB's pending shares are updated correctly
-        uint256 pendingSharesBAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesBAfter = _composerPending(address(userB)).shares;
         assertEq(pendingSharesBAfter, newSharesAmountB, "userB pending shares should be reduced to newSharesAmountB");
 
         // CRITICAL: Assert userC's pending shares are UNCHANGED
-        uint256 pendingSharesCAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userC)), remoteEid).shares;
+        uint256 pendingSharesCAfter = _composerPending(address(userC)).shares;
         assertEq(pendingSharesCAfter, pendingSharesC, "CRITICAL: userC pending shares must remain unchanged");
 
         // Assert composer totals are correct
@@ -955,8 +997,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify request redeem succeeded
-        uint256 pendingSharesAfterRequest =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfterRequest = _composerPending(address(userB)).shares;
         assertEq(
             pendingSharesAfterRequest, requestOftReceipt.amountReceivedLD, "Pending shares should be set after request"
         );
@@ -968,7 +1009,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         uint256 vaultClaimableSharesBefore = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
 
         // Call fulfillRedeem through the composer to update per-user claimable tracking
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingSharesAfterRequest);
+        _composerFulfill(address(userB), pendingSharesAfterRequest);
 
         // Verify fulfillRedeem succeeded - pending decreased, claimable increased
         assertEq(
@@ -1028,8 +1069,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         // State before complete lzCompose - VaultComposer state
         uint256 composerTotalPendingSharesSumBefore = nestVaultComposer.totalPendingSharesSum();
         uint256 composerTotalPendingSharesBefore = nestVaultComposer.totalPendingShares(remoteEid);
-        NestVaultCoreTypes.PendingRedeem memory composerPendingRedeemBefore =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory composerPendingRedeemBefore = _composerPending(address(userB));
 
         // State before complete lzCompose - NestVaultOFT (NestVaultCore) state
         uint256 vaultClaimableSharesBeforeComplete = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
@@ -1066,8 +1106,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             composerTotalPendingSharesBefore,
             "composer: totalPendingShares[remoteEid] should remain unchanged after completeRedeem (already decremented in fulfillRedeem)"
         );
-        NestVaultCoreTypes.PendingRedeem memory composerPendingRedeemAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory composerPendingRedeemAfter = _composerPending(address(userB));
         assertEq(
             composerPendingRedeemAfter.shares,
             composerPendingRedeemBefore.shares,
@@ -1182,8 +1221,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify both requests recorded
-        uint256 pendingSharesB = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
-        uint256 pendingSharesC = nestVaultComposer.pendingRedeem(addressToBytes32(address(userC)), remoteEid).shares;
+        uint256 pendingSharesB = _composerPending(address(userB)).shares;
+        uint256 pendingSharesC = _composerPending(address(userC)).shares;
         assertEq(pendingSharesB, requestOftReceiptB.amountReceivedLD, "userB pending shares should match");
         assertEq(pendingSharesC, requestOftReceiptC.amountReceivedLD, "userC pending shares should match");
 
@@ -1193,11 +1232,11 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         // Fulfill userB at rate 2.0 (2e6) - meaning 1 share = 2 assets
         accountantWithRateProviders.setRate(2e6);
-        uint256 assetsB = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingSharesB);
+        uint256 assetsB = _composerFulfill(address(userB), pendingSharesB);
 
         // Fulfill userC at rate 0.5 (0.5e6) - meaning 1 share = 0.5 assets
         accountantWithRateProviders.setRate(5e5);
-        uint256 assetsC = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userC)), pendingSharesC);
+        uint256 assetsC = _composerFulfill(address(userC), pendingSharesC);
 
         // Reset rate to 1.0 for redemption phase (this rate doesn't affect claimable redemptions)
         accountantWithRateProviders.setRate(1e6);
@@ -1208,10 +1247,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         console2.log("userC: shares=", pendingSharesC, "assets credited=", assetsC);
 
         // Verify claimable state after fulfillment
-        NestVaultCoreTypes.ClaimableRedeem memory claimableB =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
-        NestVaultCoreTypes.ClaimableRedeem memory claimableC =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userC)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableB = _composerClaimable(address(userB));
+        NestVaultCoreTypes.ClaimableRedeem memory claimableC = _composerClaimable(address(userC));
 
         assertEq(claimableB.shares, pendingSharesB, "userB claimable shares should match pending");
         assertEq(claimableB.assets, assetsB, "userB claimable assets should match fulfillRedeem return");
@@ -1284,10 +1321,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         // ============ Step 4: Verify userB's finish didn't affect userC's claimable ============
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
-        NestVaultCoreTypes.ClaimableRedeem memory claimableCAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userC)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBAfter = _composerClaimable(address(userB));
+        NestVaultCoreTypes.ClaimableRedeem memory claimableCAfter = _composerClaimable(address(userC));
 
         // Debug logging - key values only
         console2.log("=== After userB finishes ===");
@@ -1382,10 +1417,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         // ============ Step 6: Final verification - both users fully redeemed ============
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBFinal =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
-        NestVaultCoreTypes.ClaimableRedeem memory claimableCFinal =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userC)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBFinal = _composerClaimable(address(userB));
+        NestVaultCoreTypes.ClaimableRedeem memory claimableCFinal = _composerClaimable(address(userC));
 
         // Both users should have zero claimable balances after full finish
         assertEq(claimableBFinal.shares, 0, "userB final claimable shares should be 0");
@@ -1442,9 +1475,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         uint256 rateC = bound(uint256(rateSeedC), 5e5, 2e6);
 
         accountantWithRateProviders.setRate(rateB);
-        uint256 assetsB = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingSharesB);
+        uint256 assetsB = _composerFulfill(address(userB), pendingSharesB);
         accountantWithRateProviders.setRate(rateC);
-        uint256 assetsC = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userC)), pendingSharesC);
+        uint256 assetsC = _composerFulfill(address(userC), pendingSharesC);
 
         assertEq(
             nestVaultOFT.maxWithdraw(address(nestVaultComposer)),
@@ -1479,10 +1512,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             assertEq(assetsReceivedB, assetsB, "userB should receive exactly fulfilled assets");
         }
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBFinal =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
-        NestVaultCoreTypes.ClaimableRedeem memory claimableCFinal =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userC)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBFinal = _composerClaimable(address(userB));
+        NestVaultCoreTypes.ClaimableRedeem memory claimableCFinal = _composerClaimable(address(userC));
 
         assertEq(claimableBFinal.assets, 0, "userB final claimable assets should be 0");
         assertEq(claimableBFinal.shares, 0, "userB final claimable shares should be 0");
@@ -1517,10 +1548,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         (uint256 pendingSharesD,) = _requestRedeemAndReturnPending(userD, 1e6);
 
         accountantWithRateProviders.setRate(2e6);
-        uint256 assetsB = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingSharesB);
+        uint256 assetsB = _composerFulfill(address(userB), pendingSharesB);
 
         accountantWithRateProviders.setRate(5e5);
-        uint256 assetsC = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userC)), pendingSharesC);
+        uint256 assetsC = _composerFulfill(address(userC), pendingSharesC);
 
         accountantWithRateProviders.setRate(1e6);
         uint256 assetsReceivedB = _finishRedeemAndReturnAssets(userB, pendingSharesB);
@@ -1528,15 +1559,13 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         uint256 externalAssetsD = nestVaultOFT.fulfillRedeem(address(nestVaultComposer), pendingSharesD);
         assertEq(externalAssetsD, 1e6, "external fulfill should realize the 1.0 rate assets for userD");
 
-        uint256 assetsD = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userD)), pendingSharesD);
+        uint256 assetsD = _composerFulfill(address(userD), pendingSharesD);
         assertEq(
             assetsD, externalAssetsD, "userD should only be credited the assets introduced by the external fulfill"
         );
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableC =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userC)), remoteEid);
-        NestVaultCoreTypes.ClaimableRedeem memory claimableD =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userD)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableC = _composerClaimable(address(userC));
+        NestVaultCoreTypes.ClaimableRedeem memory claimableD = _composerClaimable(address(userD));
 
         assertEq(claimableC.assets, assetsC, "userC claimable assets should remain unchanged");
         assertEq(claimableD.assets, externalAssetsD, "userD claimable assets should match the external fulfill");
@@ -1655,8 +1684,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify request redeem succeeded
-        uint256 pendingSharesAfterRequest =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfterRequest = _composerPending(address(userB)).shares;
         assertEq(
             pendingSharesAfterRequest, requestOftReceipt.amountReceivedLD, "Pending shares should be set after request"
         );
@@ -1710,8 +1738,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify state unchanged (refund happened, update did not process)
-        uint256 pendingSharesAfterUpdate =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfterUpdate = _composerPending(address(userB)).shares;
         assertEq(
             pendingSharesAfterUpdate,
             pendingSharesAfterRequest,
@@ -1758,14 +1785,13 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify request redeem succeeded
-        uint256 pendingSharesAfterRequest =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfterRequest = _composerPending(address(userB)).shares;
         assertEq(
             pendingSharesAfterRequest, requestOftReceipt.amountReceivedLD, "Pending shares should be set after request"
         );
 
         // Step 2: Fulfill the redeem request through the composer
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingSharesAfterRequest);
+        _composerFulfill(address(userB), pendingSharesAfterRequest);
 
         // Step 3: Try to complete redeem with non-zero OFT amount - should revert
         uint256 redeemShareAmount = pendingSharesAfterRequest;
@@ -1803,8 +1829,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Capture state before
-        uint256 pendingSharesBefore =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesBefore = _composerPending(address(userB)).shares;
 
         // Expect the Refunded event (revert triggers refund in catch block)
         vm.expectEmit(true, false, false, false, address(nestVaultComposer));
@@ -1820,7 +1845,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify state unchanged (refund happened, complete did not process)
-        uint256 pendingSharesAfter = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfter = _composerPending(address(userB)).shares;
         assertEq(
             pendingSharesAfter,
             pendingSharesBefore,
@@ -1868,17 +1893,16 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify pending shares set
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
         assertEq(pendingShares, requestOftReceipt.amountReceivedLD, "Pending shares should be set");
 
         // State before fulfill
         uint256 totalPendingBefore = nestVaultComposer.totalPendingSharesSum();
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore = _composerClaimable(address(userB));
 
         // Step 2: Fulfill the redeem (owner has auth)
         uint256 sharesToFulfill = pendingShares;
-        uint256 assets = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), sharesToFulfill);
+        uint256 assets = _composerFulfill(address(userB), sharesToFulfill);
 
         // Verify state after fulfill
         assertGt(assets, 0, "Assets should be > 0");
@@ -1889,12 +1913,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
         assertEq(nestVaultComposer.totalPendingShares(remoteEid), 0, "totalPendingShares[remoteEid] should be 0");
 
-        NestVaultCoreTypes.PendingRedeem memory pendingAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingAfter = _composerPending(address(userB));
         assertEq(pendingAfter.shares, 0, "Pending shares should be 0 after full fulfill");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter = _composerClaimable(address(userB));
         assertEq(claimableAfter.shares, claimableBefore.shares + sharesToFulfill, "Claimable shares should increase");
         assertEq(claimableAfter.assets, claimableBefore.assets + assets, "Claimable assets should increase");
     }
@@ -1937,19 +1959,17 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
 
         // Partial fulfill (half)
         uint256 sharesToFulfill = pendingShares / 2;
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), sharesToFulfill);
+        _composerFulfill(address(userB), sharesToFulfill);
 
         // Verify partial state
-        NestVaultCoreTypes.PendingRedeem memory pendingAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingAfter = _composerPending(address(userB));
         assertEq(pendingAfter.shares, pendingShares - sharesToFulfill, "Pending should have remaining shares");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter = _composerClaimable(address(userB));
         assertEq(claimableAfter.shares, sharesToFulfill, "Claimable should have fulfilled shares");
     }
 
@@ -1976,10 +1996,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             "Vault pending should decrease by external fulfill"
         );
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore = _composerClaimable(address(userB));
 
-        uint256 assets = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), sharesToFulfill);
+        uint256 assets = _composerFulfill(address(userB), sharesToFulfill);
         assertGt(assets, 0, "Assets should be > 0");
 
         uint256 vaultClaimableAfter = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
@@ -1992,12 +2011,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             "Vault pending should remain unchanged when claimable covers shares"
         );
 
-        NestVaultCoreTypes.PendingRedeem memory pendingAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingAfter = _composerPending(address(userB));
         assertEq(pendingAfter.shares, pendingShares - sharesToFulfill, "Pending should decrease by shares fulfilled");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter = _composerClaimable(address(userB));
         assertEq(claimableAfter.shares, claimableBefore.shares + sharesToFulfill, "Claimable shares should increase");
         assertEq(claimableAfter.assets, claimableBefore.assets + assets, "Claimable assets should increase");
 
@@ -2023,10 +2040,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         uint256 vaultClaimableBefore = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
         assertEq(vaultClaimableBefore, externalShares, "Vault claimable should match external fulfill");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore = _composerClaimable(address(userB));
 
-        uint256 assets = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), sharesToFulfill);
+        uint256 assets = _composerFulfill(address(userB), sharesToFulfill);
         assertGt(assets, 0, "Assets should be > 0");
 
         uint256 vaultClaimableAfter = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
@@ -2039,12 +2055,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             vaultPendingAfter, pendingShares - sharesToFulfill, "Vault pending should decrease by fulfilled shares"
         );
 
-        NestVaultCoreTypes.PendingRedeem memory pendingAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingAfter = _composerPending(address(userB));
         assertEq(pendingAfter.shares, pendingShares - sharesToFulfill, "Pending should decrease by shares fulfilled");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter = _composerClaimable(address(userB));
         assertEq(claimableAfter.shares, claimableBefore.shares + sharesToFulfill, "Claimable shares should increase");
         assertEq(claimableAfter.assets, claimableBefore.assets + assets, "Claimable assets should increase");
         assertGt(assets, externalAssets, "Assets should include prior claimable plus newly fulfilled assets");
@@ -2060,10 +2074,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         uint256 vaultClaimableBefore = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
         assertEq(vaultClaimableBefore, 0, "Vault claimable should start at 0");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore = _composerClaimable(address(userB));
 
-        uint256 assets = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), sharesToFulfill);
+        uint256 assets = _composerFulfill(address(userB), sharesToFulfill);
         assertGt(assets, 0, "Assets should be > 0");
 
         uint256 vaultClaimableAfter = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
@@ -2074,12 +2087,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             vaultPendingAfter, pendingShares - sharesToFulfill, "Vault pending should decrease by fulfilled shares"
         );
 
-        NestVaultCoreTypes.PendingRedeem memory pendingAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingAfter = _composerPending(address(userB));
         assertEq(pendingAfter.shares, pendingShares - sharesToFulfill, "Pending should decrease by shares fulfilled");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter = _composerClaimable(address(userB));
         assertEq(claimableAfter.shares, claimableBefore.shares + sharesToFulfill, "Claimable shares should increase");
         assertEq(claimableAfter.assets, claimableBefore.assets + assets, "Claimable assets should increase");
     }
@@ -2097,10 +2108,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         assertEq(vaultClaimableBefore, pendingShares, "Vault claimable should match external fulfill");
         assertEq(vaultPendingBefore, 0, "Vault pending should be 0 after external fulfill");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableBefore = _composerClaimable(address(userB));
 
-        uint256 assets = nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingShares);
+        uint256 assets = _composerFulfill(address(userB), pendingShares);
         assertGt(assets, 0, "Assets should be > 0");
 
         uint256 vaultClaimableAfter = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
@@ -2108,12 +2118,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         assertEq(vaultClaimableAfter, vaultClaimableBefore, "Vault claimable should remain unchanged");
         assertEq(vaultPendingAfter, 0, "Vault pending should remain 0");
 
-        NestVaultCoreTypes.PendingRedeem memory pendingAfter =
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.PendingRedeem memory pendingAfter = _composerPending(address(userB));
         assertEq(pendingAfter.shares, 0, "Pending should be 0 after full fulfill");
 
-        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter =
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid);
+        NestVaultCoreTypes.ClaimableRedeem memory claimableAfter = _composerClaimable(address(userB));
         assertEq(claimableAfter.shares, claimableBefore.shares + pendingShares, "Claimable shares should increase");
         assertApproxEqAbs(assets, externalAssets, 1, "Assets should match external fulfill amount");
     }
@@ -2156,7 +2164,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
 
         // Update with same amount - should be a no-op (no shares returned)
         bytes memory updateComposeMsg =
@@ -2187,7 +2195,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify state unchanged
-        uint256 pendingSharesAfter = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingSharesAfter = _composerPending(address(userB)).shares;
         assertEq(pendingSharesAfter, pendingShares, "Pending shares should remain same when updating with same amount");
     }
 
@@ -2230,7 +2238,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
         uint256 newSharesAmount = pendingShares / 2;
 
         // Prepare update message
@@ -2320,7 +2328,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             localEid, address(nestVaultOFT), options, msgReceipt1.guid, address(nestVaultComposer), composerMsg1
         );
 
-        uint256 pendingAfterFirst = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingAfterFirst = _composerPending(address(userB)).shares;
         assertEq(pendingAfterFirst, oftReceipt1.amountReceivedLD, "First request should set pending");
 
         // Second request
@@ -2346,7 +2354,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify accumulation
-        uint256 pendingAfterSecond = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingAfterSecond = _composerPending(address(userB)).shares;
         assertEq(
             pendingAfterSecond, oftReceipt1.amountReceivedLD + oftReceipt2.amountReceivedLD, "Pending should accumulate"
         );
@@ -2437,7 +2445,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
 
         // Get the endpoint address
         address endpoint = nestVaultComposer.ENDPOINT();
@@ -2486,11 +2494,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify state unchanged
-        assertEq(
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares,
-            pendingShares,
-            "Pending should be unchanged"
-        );
+        assertEq(_composerPending(address(userB)).shares, pendingShares, "Pending should be unchanged");
     }
 
     /// @notice Test complete redeem reverts when insufficient claimable
@@ -2531,11 +2535,11 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
 
         // Fulfill only half
         uint256 halfShares = pendingShares / 2;
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), halfShares);
+        _composerFulfill(address(userB), halfShares);
 
         // Try to complete redeem for MORE than claimable
         uint256 excessiveAmount = halfShares + 1;
@@ -2573,11 +2577,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         // Verify claimable unchanged
-        assertEq(
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid).shares,
-            halfShares,
-            "Claimable should be unchanged"
-        );
+        assertEq(_composerClaimable(address(userB)).shares, halfShares, "Claimable should be unchanged");
     }
 
     /// @notice Test finish redeem reverts when zero shares are passed
@@ -2618,13 +2618,13 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
 
         // Fulfill all pending shares
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingShares);
+        _composerFulfill(address(userB), pendingShares);
 
         // Verify claimable shares exist
-        uint256 claimableShares = nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 claimableShares = _composerClaimable(address(userB)).shares;
         assertGt(claimableShares, 0, "Should have claimable shares");
 
         // Try to complete redeem with ZERO shares - should revert with ZERO_SHARES
@@ -2667,7 +2667,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         // Verify claimable unchanged (refund happened, complete did not process)
         assertEq(
-            nestVaultComposer.claimableRedeem(addressToBytes32(address(userB)), remoteEid).shares,
+            _composerClaimable(address(userB)).shares,
             claimableShares,
             "Claimable should be unchanged after ZERO_SHARES revert"
         );
@@ -2677,7 +2677,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     function test_fulfill_redeem_revert_NO_PENDING_REDEEM() public {
         // Try to fulfill without any pending
         vm.expectRevert(Errors.NoPendingRedeem.selector);
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), 1e6);
+        _composerFulfill(address(userB), 1e6);
     }
 
     /// @notice Test fulfill redeem reverts when trying to fulfill more than pending
@@ -2718,11 +2718,11 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        uint256 pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares;
+        uint256 pendingShares = _composerPending(address(userB)).shares;
 
         // Try to fulfill MORE than pending
         vm.expectRevert(Errors.InsufficientBalance.selector);
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), pendingShares + 1);
+        _composerFulfill(address(userB), pendingShares + 1);
     }
 
     /// @notice Test infeasible minMsgValue falls back to refund when refund quote is funded
@@ -2765,11 +2765,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
 
         assertEq(nestVaultOFT.balanceOf(address(nestVaultComposer)), 0, "Composer share balance should be refunded");
-        assertEq(
-            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), remoteEid).shares,
-            0,
-            "Pending redeem should remain unchanged"
-        );
+        assertEq(_composerPending(address(userB)).shares, 0, "Pending redeem should remain unchanged");
     }
 
     /// @notice Test lzCompose reverts when msg.value cannot fund minMsgValue or refund
@@ -2866,7 +2862,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         nestVaultOFT.credit(address(nestVaultComposer), amount, remoteEid);
         uint256 composerBalanceBefore = nestVaultOFT.balanceOf(address(nestVaultComposer));
 
-        nestVaultComposer.setBlockCompose(guid, true);
+        nestVaultComposer.blockCompose(guid);
         assertTrue(nestVaultComposer.composeBlocked(guid), "Guid should be blocked");
 
         vm.deal(endpoint, 0.1 ether);
@@ -2894,7 +2890,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         nestVaultOFT.credit(address(nestVaultComposer), amount, remoteEid);
 
-        nestVaultComposer.setBlockCompose(guid, true);
+        nestVaultComposer.blockCompose(guid);
         vm.deal(endpoint, 0.1 ether);
         vm.expectRevert(abi.encodeWithSelector(VaultComposerAsyncUpgradeable.ComposeBlocked.selector, guid));
         vm.prank(endpoint);
@@ -2902,7 +2898,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         assertEq(nestVaultOFT.balanceOf(address(nestVaultComposer)), amount, "Blocked compose should not refund");
 
-        nestVaultComposer.setBlockCompose(guid, false);
+        nestVaultComposer.unblockCompose(guid);
         assertFalse(nestVaultComposer.composeBlocked(guid), "Guid should be unblocked");
 
         vm.deal(endpoint, 0.1 ether);
@@ -3336,7 +3332,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         // userA is not authorized, should fail
         vm.prank(userA);
         vm.expectRevert(abi.encodeWithSignature("AUTH_UNAUTHORIZED()"));
-        nestVaultComposer.fulfillRedeem(remoteEid, addressToBytes32(address(userB)), 1e6);
+        _composerFulfill(address(userB), 1e6);
 
         // Restore permissive authority for other tests
         MockAuthority permissiveAuthority = new MockAuthority(true);
@@ -3396,14 +3392,14 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         nestVaultComposer.setAuthority(Authority(address(permissiveAuthority)));
     }
 
-    /// @notice Test setBlockCompose requires authorization
-    function test_setBlockCompose_requiresAuth() public {
+    /// @notice Test blockCompose requires authorization
+    function test_blockCompose_requiresAuth() public {
         MockAuthority restrictiveAuthority = new MockAuthority(false);
         nestVaultComposer.setAuthority(Authority(address(restrictiveAuthority)));
 
         vm.prank(userA);
         vm.expectRevert(abi.encodeWithSignature("AUTH_UNAUTHORIZED()"));
-        nestVaultComposer.setBlockCompose(bytes32(uint256(1)), true);
+        nestVaultComposer.blockCompose(bytes32(uint256(1)));
 
         MockAuthority permissiveAuthority = new MockAuthority(true);
         nestVaultComposer.setAuthority(Authority(address(permissiveAuthority)));
@@ -3414,10 +3410,10 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         bytes32 guid = bytes32(uint256(2));
         assertFalse(nestVaultComposer.composeBlocked(guid), "Guid should be unblocked by default");
 
-        nestVaultComposer.setBlockCompose(guid, true);
+        nestVaultComposer.blockCompose(guid);
         assertTrue(nestVaultComposer.composeBlocked(guid), "Guid should be blocked");
 
-        nestVaultComposer.setBlockCompose(guid, false);
+        nestVaultComposer.unblockCompose(guid);
         assertFalse(nestVaultComposer.composeBlocked(guid), "Guid should be unblocked after toggle");
     }
 
@@ -3502,6 +3498,335 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         // Fee should be non-zero
         assertGt(fee.nativeFee, 0, "Native fee should be greater than 0");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              ASYNC REDEEM: (redeemer, receiver) PAIR COVERAGE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev RequestRedeem stores pending under the (redeemer, receiver) pair taken from SendParam.to,
+    ///      not under (redeemer, redeemer). The receiver is the asset/token account distinct from the main account.
+    function test_request_redeem_distinctReceiver_keysByPair() public {
+        address userC = makeAddr("userC"); // userB's token account / ATA
+        bytes32 receiver = addressToBytes32(address(userC));
+
+        uint256 amount = _requestRedeemPair(userB, receiver, 1e6);
+
+        NestVaultCoreTypes.PendingRedeem memory pending =
+            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), receiver, remoteEid);
+        assertEq(pending.shares, amount, "pending keyed by (redeemer, receiver)");
+
+        // Nothing is keyed under (redeemer, redeemer) nor (receiver, receiver)
+        assertEq(_composerPending(address(userB)).shares, 0, "no bucket at (redeemer, redeemer)");
+        assertEq(_composerPending(address(userC)).shares, 0, "no bucket at (receiver, receiver)");
+    }
+
+    /// @dev A RequestRedeem whose receiver (SendParam.to) is empty is rejected with InvalidReceiver and refunded;
+    ///      no pending bucket is created.
+    function test_request_redeem_revert_InvalidReceiver_refunds() public {
+        address endpoint = nestVaultComposer.ENDPOINT();
+        uint256 amount = 1e6;
+        uint256 totalPendingBefore = nestVaultComposer.totalPendingSharesSum();
+
+        // RequestRedeem compose whose inner SendParam.to (the receiver) is zero
+        bytes memory innerComposeMsg = _formatRequestRedeemComposeMsg(remoteEid, bytes32(0), 0, 0);
+        bytes memory composerMsg = OFTComposeMsgCodec.encode(
+            1, remoteEid, amount, abi.encodePacked(addressToBytes32(address(userB)), innerComposeMsg)
+        );
+        bytes32 guid = bytes32(uint256(0xA11CE));
+
+        vm.deal(endpoint, 1 ether);
+        // Composer must hold shares so the refund via the share OFT can settle
+        nestVaultOFT.credit(address(nestVaultComposer), amount, remoteEid);
+
+        // InvalidReceiver is thrown inside the composer and caught -> request refunded, not reverted
+        vm.prank(endpoint);
+        nestVaultComposer.lzCompose{value: 0.1 ether}(address(nestVaultOFT), guid, composerMsg, address(0), "");
+
+        assertEq(nestVaultComposer.totalPendingSharesSum(), totalPendingBefore, "no pending created on InvalidReceiver");
+        assertEq(_composerPending(address(userB)).shares, 0, "no (userB, userB) pending");
+        assertEq(
+            nestVaultComposer.pendingRedeem(addressToBytes32(address(userB)), bytes32(0), remoteEid).shares,
+            0,
+            "no zero-receiver pending bucket"
+        );
+    }
+
+    /// @dev Only the request's redeemer can finish it. The (redeemer, receiver) key isolates buckets, so a different
+    ///      main account (composeFrom) resolves to an empty bucket and reverts InsufficientClaimable — it can never
+    ///      reach another user's claimable.
+    function test_finishRedeemAndSend_revert_wrongRedeemer_isolatedByPairKey() public {
+        address userC = makeAddr("userC");
+
+        // Set up a fulfilled claimable bucket for (userB, userB)
+        (uint256 pending,) = _requestRedeemAndReturnPending(userB, 1e6);
+        _composerFulfill(address(userB), pending);
+
+        // userC attempts to finish userB's redemption: receiver (SendParam.to) = userB, redeemer = userC ->
+        // key(userC, userB) is empty -> reverts InsufficientClaimable (pair key isolates buckets).
+        SendParam memory sp = SendParam(
+            remoteEid,
+            addressToBytes32(address(userB)),
+            pending,
+            0,
+            new bytes(0),
+            new bytes(0),
+            abi.encode(VaultComposerAsyncUpgradeable.RedeemType.FinishRedeem)
+        );
+        vm.expectRevert(Errors.InsufficientClaimable.selector);
+        nestVaultComposer.finishRedeemAndSend(remoteEid, addressToBytes32(address(userC)), sp, address(this));
+    }
+
+    /// @dev Full lifecycle with receiver != redeemer: request/fulfill/finish all key by the pair and the
+    ///      finished assets are routed to the receiver bucket (not the redeemer/main account).
+    function test_finish_redeem_distinctReceiver_routesToReceiverBucket() public {
+        address userC = makeAddr("userC"); // userB's token account / ATA
+        bytes32 receiver = addressToBytes32(address(userC));
+        bytes32 redeemerB = addressToBytes32(address(userB));
+
+        // ---- Request: composeFrom = userB (redeemer), SendParam.to = userC (receiver/ATA) ----
+        uint256 vaultPendingBefore = nestVaultOFT.pendingRedeemRequest(0, address(nestVaultComposer));
+        uint256 amount = _requestRedeemPair(userB, receiver, 1e6);
+
+        // Pending lives under the (redeemer, receiver) pair, mirrored at the vault's controller level.
+        assertEq(
+            nestVaultComposer.pendingRedeem(redeemerB, receiver, remoteEid).shares, amount, "pending keyed by pair"
+        );
+        assertEq(_composerPending(address(userB)).shares, 0, "no pending at (redeemer, redeemer)");
+        assertEq(
+            nestVaultOFT.pendingRedeemRequest(0, address(nestVaultComposer)),
+            vaultPendingBefore + amount,
+            "vault pending up by amount"
+        );
+
+        // ---- Fulfill the (userB, userC) pair ----
+        uint256 vaultClaimableBefore = nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer));
+        uint256 assetsClaimable = nestVaultComposer.fulfillRedeem(remoteEid, redeemerB, receiver, amount);
+        assertGt(assetsClaimable, 0, "fulfilled assets");
+
+        NestVaultCoreTypes.ClaimableRedeem memory claimable =
+            nestVaultComposer.claimableRedeem(redeemerB, receiver, remoteEid);
+        assertEq(claimable.shares, amount, "claimable keyed by pair");
+        assertEq(claimable.assets, assetsClaimable, "claimable assets keyed by pair");
+        // Claimable is NOT keyed under (redeemer, redeemer); only the (redeemer, receiver) pair holds it
+        assertEq(_composerClaimable(address(userB)).shares, 0, "no claimable at (redeemer, redeemer)");
+        assertEq(
+            nestVaultComposer.pendingRedeem(redeemerB, receiver, remoteEid).shares, 0, "pending consumed by fulfill"
+        );
+        assertEq(
+            nestVaultOFT.claimableRedeemRequest(0, address(nestVaultComposer)),
+            vaultClaimableBefore + amount,
+            "vault claimable up by amount"
+        );
+
+        // ---- Finish: redeemer userB authorizes; assets are routed to the receiver bucket ----
+        uint256 assetsSent = _finishRedeemPair(userB, receiver, amount);
+        assertEq(assetsSent, assetsClaimable, "assets withdrawn from vault match the claimable assets");
+
+        // Pair bucket fully consumed
+        assertEq(
+            nestVaultComposer.claimableRedeem(redeemerB, receiver, remoteEid).shares,
+            0,
+            "claimable consumed for the pair"
+        );
+    }
+
+    /// @dev RequestRedeem with composeFrom = _redeemer and SendParam.to = _receiver (may differ from _redeemer).
+    function _requestRedeemPair(address _redeemer, bytes32 _receiver, uint256 _redeemAmount)
+        internal
+        returns (uint256 amountReceived)
+    {
+        bytes memory requestComposeMsg = _formatRequestRedeemComposeMsg(remoteEid, _receiver, 0, 0);
+        bytes memory requestOptions =
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0).addExecutorLzComposeOption(0, 500000, 0);
+        SendParam memory requestSendParam = SendParam(
+            localEid,
+            addressToBytes32(address(nestVaultComposer)),
+            _redeemAmount,
+            _redeemAmount,
+            requestOptions,
+            requestComposeMsg,
+            ""
+        );
+        MessagingFee memory requestFee = remoteNestShare.quoteSend(requestSendParam, false);
+
+        vm.prank(_redeemer);
+        (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt) =
+            remoteNestShare.send{value: requestFee.nativeFee}(requestSendParam, requestFee, payable(address(this)));
+        verifyPackets(localEid, addressToBytes32(address(nestVaultOFT)));
+
+        bytes memory requestComposerMsg = OFTComposeMsgCodec.encode(
+            msgReceipt.nonce,
+            remoteEid,
+            oftReceipt.amountReceivedLD,
+            abi.encodePacked(addressToBytes32(_redeemer), requestComposeMsg)
+        );
+        this.lzCompose(
+            localEid,
+            address(nestVaultOFT),
+            requestOptions,
+            msgReceipt.guid,
+            address(nestVaultComposer),
+            requestComposerMsg
+        );
+
+        amountReceived = oftReceipt.amountReceivedLD;
+    }
+
+    /// @dev FinishRedeem with composeFrom = _redeemer and SendParam.to = _receiver (may differ from _redeemer).
+    function _finishRedeemPair(address _redeemer, bytes32 _receiver, uint256 _shareAmount)
+        internal
+        returns (uint256 assetsSent)
+    {
+        bytes memory assetSendOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
+        SendParam memory quoteSendParam = SendParam(
+            remoteEid,
+            _receiver,
+            _shareAmount,
+            0,
+            assetSendOptions,
+            new bytes(0),
+            abi.encode(VaultComposerAsyncUpgradeable.RedeemType.FinishRedeem)
+        );
+        MessagingFee memory assetSendFee = nestCCTPRelayer.quoteSend(quoteSendParam, false);
+        uint256 assetSendFeeWithBuffer = assetSendFee.nativeFee + 1000;
+
+        bytes memory completeOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0)
+            .addExecutorLzComposeOption(0, 2000000, uint128(assetSendFeeWithBuffer));
+        bytes memory completeComposeMsg =
+            _formatCompleteRedeemComposeMsg(remoteEid, _receiver, _shareAmount, 0, assetSendFeeWithBuffer);
+        SendParam memory completeSendParam = SendParam(
+            localEid, addressToBytes32(address(nestVaultComposer)), 0, 0, completeOptions, completeComposeMsg, ""
+        );
+
+        MessagingFee memory completeFee = remoteNestShare.quoteSend(completeSendParam, false);
+        vm.prank(_redeemer);
+        (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt) =
+            remoteNestShare.send{value: completeFee.nativeFee}(completeSendParam, completeFee, payable(address(this)));
+        verifyPackets(localEid, addressToBytes32(address(nestVaultOFT)));
+
+        bytes memory completeComposerMsg = OFTComposeMsgCodec.encode(
+            msgReceipt.nonce,
+            remoteEid,
+            oftReceipt.amountReceivedLD,
+            abi.encodePacked(addressToBytes32(_redeemer), completeComposeMsg)
+        );
+
+        uint256 vaultAssetsBefore = localAsset.balanceOf(address(nestVaultOFT));
+        this.lzCompose(
+            localEid,
+            address(nestVaultOFT),
+            completeOptions,
+            msgReceipt.guid,
+            address(nestVaultComposer),
+            completeComposerMsg
+        );
+        assetsSent = vaultAssetsBefore - localAsset.balanceOf(address(nestVaultOFT));
+    }
+
+    /// @dev UpdateRedeemRequest with composeFrom = _redeemer and SendParam.to = _receiver (the bucket key).
+    ///      Reduces the (redeemer, receiver) pending bucket to _newShares; returned shares are bridged to the redeemer.
+    function _updateRedeemPair(address _redeemer, bytes32 _receiver, uint256 _newShares)
+        internal
+        returns (uint256 returnAmount)
+    {
+        uint256 _oldShares = nestVaultComposer.pendingRedeem(addressToBytes32(_redeemer), _receiver, remoteEid).shares;
+        returnAmount = _oldShares - _newShares;
+
+        // Returned shares are bridged back to the redeemer (main account), so quote/own that destination.
+        bytes memory returnExtraOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
+        SendParam memory quoteSendParam = SendParam(
+            remoteEid,
+            addressToBytes32(_redeemer),
+            returnAmount,
+            0,
+            returnExtraOptions,
+            new bytes(0),
+            abi.encode(VaultComposerAsyncUpgradeable.RedeemType.UpdateRedeemRequest)
+        );
+        MessagingFee memory returnFee = nestVaultOFT.quoteSend(quoteSendParam, false);
+        uint256 returnFeeWithBuffer = returnFee.nativeFee + 1000;
+
+        bytes memory updateOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0)
+            .addExecutorLzComposeOption(0, 2000000, uint128(returnFeeWithBuffer));
+        bytes memory updateComposeMsg =
+            _formatUpdateRedeemComposeMsg(remoteEid, _receiver, _newShares, returnFeeWithBuffer);
+        SendParam memory updateSendParam = SendParam(
+            localEid, addressToBytes32(address(nestVaultComposer)), 0, 0, updateOptions, updateComposeMsg, ""
+        );
+
+        MessagingFee memory updateFee = remoteNestShare.quoteSend(updateSendParam, false);
+        vm.prank(_redeemer);
+        (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt) =
+            remoteNestShare.send{value: updateFee.nativeFee}(updateSendParam, updateFee, payable(address(this)));
+        verifyPackets(localEid, addressToBytes32(address(nestVaultOFT)));
+
+        bytes memory updateComposerMsg = OFTComposeMsgCodec.encode(
+            msgReceipt.nonce,
+            remoteEid,
+            oftReceipt.amountReceivedLD,
+            abi.encodePacked(addressToBytes32(_redeemer), updateComposeMsg)
+        );
+        this.lzCompose(
+            localEid,
+            address(nestVaultOFT),
+            updateOptions,
+            msgReceipt.guid,
+            address(nestVaultComposer),
+            updateComposerMsg
+        );
+        // Deliver the returned shares to the redeemer on the remote chain
+        verifyPackets(remoteEid, addressToBytes32(address(remoteNestShare)));
+    }
+
+    /// @dev UpdateRedeem with receiver != redeemer: the (redeemer, receiver) bucket is reduced, but the returned
+    ///      shares are bridged to the redeemer (main account), never to the receiver/token account.
+    function test_update_redeem_distinctReceiver_returnsSharesToRedeemer() public {
+        address userC = makeAddr("userC"); // userB's token account / ATA
+        bytes32 receiver = addressToBytes32(address(userC));
+        bytes32 redeemerB = addressToBytes32(address(userB));
+
+        uint256 amount = _requestRedeemPair(userB, receiver, 1e6);
+        uint256 newShares = amount / 2;
+
+        uint256 userBRemoteBefore = remoteNestShare.balanceOf(userB);
+        uint256 userCRemoteBefore = remoteNestShare.balanceOf(userC);
+
+        uint256 returnAmount = _updateRedeemPair(userB, receiver, newShares);
+
+        // Returned shares land on the redeemer (main account), never on the receiver/ATA
+        assertEq(remoteNestShare.balanceOf(userB), userBRemoteBefore + returnAmount, "returned shares go to redeemer");
+        assertEq(remoteNestShare.balanceOf(userC), userCRemoteBefore, "receiver/ATA receives no shares");
+
+        // The (redeemer, receiver) bucket is reduced; nothing is keyed under (redeemer, redeemer)
+        assertEq(
+            nestVaultComposer.pendingRedeem(redeemerB, receiver, remoteEid).shares, newShares, "pair bucket reduced"
+        );
+        assertEq(_composerPending(address(userB)).shares, 0, "no (redeemer, redeemer) bucket");
+    }
+
+    /// @dev A single redeemer with two distinct receivers (token accounts) gets two independent buckets keyed by
+    ///      keccak256(redeemer, receiver); fulfilling one must not touch the other.
+    function test_requestFulfill_distinctReceivers_bucketsIsolatedByReceiver() public {
+        bytes32 redeemerB = addressToBytes32(address(userB));
+        bytes32 ata1 = addressToBytes32(makeAddr("ata1"));
+        bytes32 ata2 = addressToBytes32(makeAddr("ata2"));
+
+        uint256 amt1 = _requestRedeemPair(userB, ata1, 1e6);
+        uint256 amt2 = _requestRedeemPair(userB, ata2, 5e5);
+
+        // Two independent pending buckets under the same redeemer
+        assertEq(nestVaultComposer.pendingRedeem(redeemerB, ata1, remoteEid).shares, amt1, "bucket 1 pending");
+        assertEq(nestVaultComposer.pendingRedeem(redeemerB, ata2, remoteEid).shares, amt2, "bucket 2 pending");
+
+        // Fulfill only bucket 1
+        nestVaultComposer.fulfillRedeem(remoteEid, redeemerB, ata1, amt1);
+
+        // Bucket 1 moves pending -> claimable; bucket 2 is untouched
+        assertEq(nestVaultComposer.pendingRedeem(redeemerB, ata1, remoteEid).shares, 0, "bucket 1 pending cleared");
+        assertGt(nestVaultComposer.claimableRedeem(redeemerB, ata1, remoteEid).shares, 0, "bucket 1 claimable set");
+        assertEq(nestVaultComposer.pendingRedeem(redeemerB, ata2, remoteEid).shares, amt2, "bucket 2 pending intact");
+        assertEq(nestVaultComposer.claimableRedeem(redeemerB, ata2, remoteEid).shares, 0, "bucket 2 no claimable");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -3612,7 +3937,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             requestComposerMsg
         );
 
-        pendingShares = nestVaultComposer.pendingRedeem(addressToBytes32(_user), remoteEid).shares;
+        pendingShares = _composerPending(_user).shares;
         amountReceived = requestOftReceipt.amountReceivedLD;
     }
 
@@ -3662,6 +3987,25 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
         uint256 vaultAssetsAfterFinish = localAsset.balanceOf(address(nestVaultOFT));
         assetsSent = vaultAssetsBeforeFinish - vaultAssetsAfterFinish;
+    }
+
+    /// @dev Composer pending-redeem view for a user acting as both redeemer and receiver (test convenience).
+    ///      Keeps the doubled pair-key expression out of the heavy test functions (stack depth + readability).
+    function _composerPending(address _user) internal view returns (NestVaultCoreTypes.PendingRedeem memory) {
+        bytes32 b = addressToBytes32(_user);
+        return nestVaultComposer.pendingRedeem(b, b, remoteEid);
+    }
+
+    /// @dev Composer claimable-redeem view for a user acting as both redeemer and receiver (test convenience).
+    function _composerClaimable(address _user) internal view returns (NestVaultCoreTypes.ClaimableRedeem memory) {
+        bytes32 b = addressToBytes32(_user);
+        return nestVaultComposer.claimableRedeem(b, b, remoteEid);
+    }
+
+    /// @dev Fulfills a redemption for a user acting as both redeemer and receiver (test convenience).
+    function _composerFulfill(address _user, uint256 _shares) internal returns (uint256) {
+        bytes32 b = addressToBytes32(_user);
+        return nestVaultComposer.fulfillRedeem(remoteEid, b, b, _shares);
     }
 
     function _formatInstantRedeemComposeMsg(
@@ -3918,28 +4262,27 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
     function _deployNestCCTPRelayer() internal {
         // deploy nest cctp relayer
-        nestCCTPRelayer = NestCCTPRelayer(
-            _deployContractAndProxy(
-                type(NestCCTPRelayer).creationCode,
-                abi.encode(
-                    address(localMessageTransmitter),
-                    address(localTokenMessenger),
-                    address(endpoints[localEid]),
-                    address(localAsset)
-                ),
-                abi.encodeWithSelector(
-                    NestCCTPRelayer.initialize.selector,
-                    address(this) // owner
-                )
+        address relayerProxy = _deployContractAndProxy(
+            type(NestCCTPRelayer).creationCode,
+            abi.encode(
+                address(localMessageTransmitter),
+                address(localTokenMessenger),
+                address(endpoints[localEid]),
+                address(localAsset)
+            ),
+            abi.encodeWithSelector(
+                NestCCTPRelayer.initialize.selector,
+                address(this) // owner
             )
         );
+        nestCCTPRelayer = NestCCTPRelayer(payable(relayerProxy));
     }
 
     function _setUpNestCCTPRelayer() internal {
         // set nest vault composer
         nestCCTPRelayer.setComposer(address(nestVaultComposer), true);
 
-        // set eid to domain
+        // set eid to domain (peers() derives from CCTP's remoteTokenMessengers for these domains)
         nestCCTPRelayer.setEidToDomain(localEid, localDomain);
         nestCCTPRelayer.setEidToDomain(remoteEid, remoteDomain);
 

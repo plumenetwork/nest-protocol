@@ -9,6 +9,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
 import {Errors} from "contracts/types/Errors.sol";
+import {ITransferHook} from "contracts/interfaces/ITransferHook.sol";
 
 // interfaces
 import {
@@ -63,7 +64,7 @@ contract NestVaultOFT is NestVaultPermit2, OFTCoreUpgradeable {
     /// @dev    This version is used to track contract upgrades.
     /// @return string A string representing the version of the contract.
     function version() public pure returns (string memory) {
-        return "0.0.2";
+        return "1.1.0";
     }
 
     /// @inheritdoc IOFT
@@ -104,6 +105,9 @@ contract NestVaultOFT is NestVaultPermit2, OFTCoreUpgradeable {
         returns (uint256 amountSentLD, uint256 amountReceivedLD)
     {
         (amountSentLD, amountReceivedLD) = _debitView(_amountLD, _minAmountLD, _dstEid);
+
+        ITransferHook beforeTransferHook = SHARE.hook();
+        if (address(beforeTransferHook) != address(0)) beforeTransferHook.beforeTransfer(_from);
 
         // Burn _amountLD shares from sender (_from) and don't transfer any assets out
         SHARE.exit(address(0), ERC20(address(0)), 0, _from, amountSentLD);

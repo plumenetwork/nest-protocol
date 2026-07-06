@@ -179,6 +179,7 @@ contract NestBundler {
 
     /// @notice Builds direct-execution bundleCalls and approval txs for the async portion only.
     /// @dev Empty async phases return zero-length `bundleCalls` and `approveCalls`.
+    /// @dev If combining with a sync phase, this function should be called only **after** the sync leg has executed on-chain.
     /// @param bundle Fully derived bundle payload.
     /// @return bundleCalls Bundler3 bundleCalls that remain for the async executor.
     function getAsyncBundleCalls(Bundle memory bundle) external view returns (Call[] memory bundleCalls) {

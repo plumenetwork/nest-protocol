@@ -805,7 +805,7 @@ contract NestShareOFTTest is TestHelperOz5 {
 
     function test_transfer_hook_blacklisted_from_reverts() public {
         BlacklistHook hook = _setBlacklistHook();
-        hook.setBlacklisted(userA, true);
+        hook.blacklist(userA);
 
         vm.prank(userA);
         vm.expectRevert(abi.encodeWithSelector(BlacklistHook.BlacklistHook__Blacklisted.selector, userA));
@@ -814,7 +814,7 @@ contract NestShareOFTTest is TestHelperOz5 {
 
     function test_transfer_hook_blacklisted_from_reverts_transferFrom() public {
         BlacklistHook hook = _setBlacklistHook();
-        hook.setBlacklisted(userA, true);
+        hook.blacklist(userA);
 
         vm.prank(userA);
         aOFT.approve(userB, 1 ether);
@@ -835,7 +835,7 @@ contract NestShareOFTTest is TestHelperOz5 {
 
     function test_transfer_hook_allows_to_blacklisted() public {
         BlacklistHook hook = _setBlacklistHook();
-        hook.setBlacklisted(userB, true);
+        hook.blacklist(userB);
 
         vm.prank(userA);
         aOFT.transfer(userB, 1 ether);
@@ -846,7 +846,7 @@ contract NestShareOFTTest is TestHelperOz5 {
 
     function test_transfer_hook_blocks_send_from_blacklisted() public {
         BlacklistHook hook = _setBlacklistHook();
-        hook.setBlacklisted(userA, true);
+        hook.blacklist(userA);
 
         uint256 tokensToSend = 1 ether;
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);

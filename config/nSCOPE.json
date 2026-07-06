@@ -1,0 +1,143 @@
+{
+  "contracts": [
+    {
+      "contract": {
+        "eid": 30370,
+        "contractName": "NestShareOFT",
+        "address": "0x770C2D6b16c8F8AB5535ae719A5475411c120f6e"
+      }
+    },
+    {
+      "contract": {
+        "eid": 30168,
+        "address": "AYCCvQENFwnSxzafN9JDMGCZacvo4Yk89ZSuLRHm4qyT"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "from": {
+        "eid": 30370,
+        "contractName": "NestShareOFT",
+        "address": "0x770C2D6b16c8F8AB5535ae719A5475411c120f6e"
+      },
+      "to": {
+        "eid": 30168,
+        "address": "AYCCvQENFwnSxzafN9JDMGCZacvo4Yk89ZSuLRHm4qyT"
+      },
+      "config": {
+        "sendLibrary": "0xFe7C30860D01e28371D40434806F4A8fcDD3A098",
+        "receiveLibraryConfig": {
+          "receiveLibrary": "0x5B19bd330A84c049b62D5B0FC2bA120217a18C1C",
+          "gracePeriod": "0"
+        },
+        "sendConfig": {
+          "executorConfig": {
+            "maxMessageSize": 10000,
+            "executor": "0x41Bdb4aa4A63a5b2Efc531858d3118392B1A1C3d"
+          },
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+              "0x882a1ee8891c7d22310dedf032ef9653785532b8",
+              "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "enforcedOptions": [
+          {
+            "msgType": 1,
+            "optionType": 1,
+            "gas": 120000
+          }
+        ],
+        "receiveConfig": {
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+              "0x882a1ee8891c7d22310dedf032ef9653785532b8",
+              "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        }
+      }
+    },
+    {
+      "from": {
+        "eid": 30168,
+        "address": "AYCCvQENFwnSxzafN9JDMGCZacvo4Yk89ZSuLRHm4qyT"
+      },
+      "to": {
+        "eid": 30370,
+        "contractName": "NestShareOFT",
+        "address": "0x770C2D6b16c8F8AB5535ae719A5475411c120f6e"
+      },
+      "config": {
+        "sendLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
+        "receiveLibraryConfig": {
+          "receiveLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
+          "gracePeriod": "0"
+        },
+        "receiveConfig": {
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
+              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab",
+              "7jMeX5mzXnSSKYd8DxBDP4xMnkNFZZZm5W28FWUTbwU3"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        },
+        "enforcedOptions": [
+          {
+            "msgType": 1,
+            "optionType": 1,
+            "gas": 100000,
+            "value": 0
+          },
+          {
+            "msgType": 2,
+            "optionType": 1,
+            "gas": 100000,
+            "value": 0
+          },
+          {
+            "msgType": 2,
+            "optionType": 3,
+            "index": 0,
+            "gas": 350000,
+            "value": 0
+          }
+        ],
+        "sendConfig": {
+          "executorConfig": {
+            "maxMessageSize": 10000,
+            "executor": "AwrbHeCyniXaQhiJZkLhgWdUCteeWSGaSN1sTfLiY7xK"
+          },
+          "ulnConfig": {
+            "confirmations": "0",
+            "requiredDVNs": [
+              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
+              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab",
+              "7jMeX5mzXnSSKYd8DxBDP4xMnkNFZZZm5W28FWUTbwU3"
+            ],
+            "requiredDVNCount": 3,
+            "optionalDVNs": [],
+            "optionalDVNThreshold": 0
+          }
+        }
+      }
+    }
+  ]
+}

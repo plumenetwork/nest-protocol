@@ -12,6 +12,7 @@ import {AtomicQueue} from "@boring-vault/src/atomic-queue/AtomicQueue.sol";
 import {AtomicSolverV3} from "contracts/vendor/boring-vault/AtomicSolverV3.sol";
 import {CrossChainTellerBase} from "@boring-vault/src/base/Roles/CrossChain/CrossChainTellerBase.sol";
 import {TellerWithMultiAssetSupport} from "@boring-vault/src/base/Roles/TellerWithMultiAssetSupport.sol";
+import {AccountantWithRateProviders} from "@boring-vault/src/base/Roles/AccountantWithRateProviders.sol";
 
 import {Call, IBundler3} from "contracts/vendor/bundler3/interfaces/IBundler3.sol";
 import {ErrorsLib} from "contracts/vendor/bundler3/libraries/ErrorsLib.sol";
@@ -166,6 +167,7 @@ contract NestAdapterIntegrationTest is Test {
         _deployAtomicQueueAndSolver();
         _deployNestUnlooper();
         _deployForkNestVault();
+        _ensureAccountantUnpaused();
         nestUnlooper.setVaultApproval(address(forkVault), true);
         nestUnlooper.setVaultApproval(address(teller), true);
         _seedUserAndApprove();
@@ -1104,6 +1106,17 @@ contract NestAdapterIntegrationTest is Test {
         assertEq(INestVaultCore(address(forkVault)).share(), NALPHA, "forkVault share mismatch");
     }
 
+    /// @dev The live NALPHA accountant may be paused on-chain, which reverts every rate read
+    ///      (and therefore every deposit/redeem) with AccountantWithRateProviders__Paused().
+    ///      Unpause it on the fork so the integration flow can run. Owner-gated, idempotent.
+    function _ensureAccountantUnpaused() internal {
+        AccountantWithRateProviders accountant = teller.accountant();
+        (,,,,,,, bool isPaused,,) = accountant.accountantState();
+        if (!isPaused) return;
+        vm.prank(accountant.owner());
+        accountant.unpause();
+    }
+
     function _seedUserAndApprove() internal {
         deal(PUSD, user, USER_INITIAL_PUSD, true);
         deal(PUSD, solver, USER_INITIAL_PUSD, true);
@@ -1163,7 +1176,7 @@ contract NestAdapterIntegrationTest is Test {
             maxRepaySharePriceE27: type(uint256).max,
             mode: PositionMode.Target,
             target: Position({loan: targetBorrow, collateral: targetCollateral}),
-            delta: MarketActions({borrow: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
+            delta: MarketActions({borrow: 0, flashRepay: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
         });
         RouteInput memory route =
             RouteInput({legacyRedemption: legacyRedemption, legacyDeposit: false, instantRedeem: instantRedeem});

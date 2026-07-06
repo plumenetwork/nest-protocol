@@ -1,0 +1,15 @@
+{
+  "chainId": 1,
+  "name": "ethereum",
+  "rpc": "ETHEREUM_RPC_URL",
+  "isEvm": true,
+  "common": {
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "createx": "0x1077f8ea07EA34D9F23BC39256BF234665FB391f",
+    "multisig": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+  },
+  "predicate": {
+    "serviceManager": "0xf6f4A30EeF7cf51Ed4Ee1415fB3bFDAf3694B0d2",
+    "defaultPolicyID": "x-nest-prod-006"
+  }
+}

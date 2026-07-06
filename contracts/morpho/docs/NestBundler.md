@@ -536,6 +536,8 @@ When a bundle requires redemption that isn't instant (`route.instantRedeem = fal
 
 Check `isSyncRedeem(bundle)` -- returns `true` when the entire bundle is sync-executable.
 
+> **Requirement:** build the async calls (`getAsyncBundleCalls`) only **after** the sync leg has executed on-chain. The looped-deleverage planner sizes its flash-loan chunks against live Morpho borrow state; before the sync repay lands, the live debt is still the full pre-split amount (not the redeem-funded residual the async phase targets), so a pre-sync build can revert (`ExceedsMaxLoops` / `InsufficientCollateralForRedeem`) or emit an over-chunked sequence that pays the redemption fee per chunk. Always (re)build the async calls once the sync leg is reflected on-chain.
+
 ---
 
 ## Flow 2: Async Path (Keeper Executes via NestUnlooper)

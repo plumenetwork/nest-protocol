@@ -73,7 +73,8 @@ contract NestShareSeizerTest is TestHelperOz5, Constants {
 
         authority.setRoleCapability(OWNER_ROLE, address(share), NestShareOFT.enter.selector, true);
         authority.setRoleCapability(OWNER_ROLE, address(share), NestShareOFT.exit.selector, true);
-        authority.setRoleCapability(OWNER_ROLE, address(hook), BlacklistHook.setBlacklisted.selector, true);
+        authority.setRoleCapability(OWNER_ROLE, address(hook), BlacklistHook.blacklist.selector, true);
+        authority.setRoleCapability(OWNER_ROLE, address(hook), BlacklistHook.unblacklist.selector, true);
         authority.setUserRole(address(seizer), OWNER_ROLE, true);
     }
 
@@ -123,7 +124,7 @@ contract NestShareSeizerTest is TestHelperOz5, Constants {
 
     function test_seize_allows_blacklisted_sender() public {
         _mintShares(userA, SHARE_AMOUNT);
-        hook.setBlacklisted(userA, true);
+        hook.blacklist(userA);
 
         seizer.seize(share, userA, userB, SHARE_AMOUNT);
 

@@ -1,0 +1,100 @@
+{
+  "symbol": "nLCRD",
+  "name": "Nest Liquid Credit Vault",
+  "baseAssetSymbol": "USDC",
+  "vaultType": "NestVault",
+  "accountantType": "NestHubAccountant",
+
+  "contracts": {
+    "share": "0xdf45b8322Ea4ce898331602E2d1F3d1A67aE0ee8",
+    "accountant": "0x334dc7fd04a3758CC597598091F3Db2d212cC7Df",
+    "rolesAuthority": "0xD970CeA62BD2C19498Df72B74B8f5B2715913dc0",
+    "vaults": [
+      {
+        "assetSymbol": "USDC",
+        "chains": [98866, 1],
+        "address": "0x7195De4eAb3e43910E3BAd93882A7b15B9Eb6c8e",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000",
+        "composer": "0x63c7a4f0D9a19BF8916837603cCDEa400d9D6295"
+      },
+      {
+        "assetSymbol": "pUSD",
+        "chains": [98866],
+        "address": "0x67B2e065adcd7a8b5112F9582388dFb57C0BeDC2",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000",
+        "composer": "0x0000000000000000000000000000000000000000"
+      }
+    ]
+  },
+
+  "common": {
+    "predicateProxy": "0xfC0c4222B3A0c9B060C0B959DEc62442036b9035",
+    "operatorRegistry": "0xFAbD98aEe7F100ff31632B5d8124488a39a26835",
+    "redeemOperator": "0xD9B432376cB18c99716865e540bb32c67d795440",
+    "cctpRelayer": "0x7de01896d36Bea9CF072Ac64E41685418941d8bE",
+    "seizer": "0xf6c00A6aC137680A5e9ECC7aB342dF2c4D190510",
+    "blacklistHook": "0x7bc28c4085933bC3fc84DDBebE1C4009DdDE96F4",
+    "commonRolesAuthority": "0x93786916e1EE5913A45662a5986559f5785a5BA4"
+  },
+
+  "commonOverrides": {
+    "nestAdapter": "0x0000000000000000000000000000000000000000",
+    "nestUnlooper": "0x0000000000000000000000000000000000000000"
+  },
+
+  "accountantParams": {
+    "totalSharesLastUpdate": 0,
+    "payoutAddress": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "startingExchangeRate": 1007631,
+    "allowedExchangeRateChangeUpper": 1000500,
+    "allowedExchangeRateChangeLower": 999500,
+    "minimumUpdateDelayInSeconds": 3600,
+    "managementFee": 0,
+    "performanceFee": 0
+  },
+
+  "vaultFees": {
+    "deposit":           { "rate": 0, "flat": 0 },
+    "redemption":        { "rate": 0, "flat": 0 },
+    "instantRedemption": { "rate": 1500,   "flat": 0}
+  },
+
+  "vaultParams": {
+    "minRate": 1
+  },
+
+  "predicateParams": {
+    "policyID": "x-nest-prod-006"
+  },
+
+  "composerParams": {
+    "maxRetryableValue": 10000000000000000000
+  },
+
+  "roles": {
+    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+    "KEEPER_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
+    ],
+    "UPDATE_EXCHANGE_RATE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "MANAGER_ROLE": [
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "CAN_SOLVE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ]
+  },
+  "saltOverrides": {
+    "NestAccountant": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00a01527a0cfe3a90951c484",
+    "NestVault-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00ec8d84abc4cdffeb420f26",
+    "NestVaultComposer-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e0024a714dedeb909454d67f8",
+    "RolesAuthority": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e0099c22690334a0a9ac00973"
+  },
+  "peers": [98866, 101, 1]
+}

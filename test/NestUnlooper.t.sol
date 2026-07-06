@@ -11,6 +11,7 @@ import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Call} from "contracts/vendor/bundler3/interfaces/IBundler3.sol";
 import {Id, IMorpho, Market, MarketParams, Position as MorphoPosition} from "@morpho/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "@morpho/libraries/MarketParamsLib.sol";
+import {SharesMathLib} from "@morpho/libraries/SharesMathLib.sol";
 
 import {AtomicQueue} from "@boring-vault/src/atomic-queue/AtomicQueue.sol";
 import {TellerWithMultiAssetSupport} from "@boring-vault/src/base/Roles/TellerWithMultiAssetSupport.sol";
@@ -20,8 +21,9 @@ import {GeneralAdapter1} from "contracts/vendor/morpho/GeneralAdapter1.sol";
 import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
 import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
 import {NestUnlooper} from "contracts/morpho/NestUnlooper.sol";
-import {NestUnlooperErrors} from "contracts/morpho/types/Errors.sol";
+import {NestUnlooperErrors, NestBundleErrors} from "contracts/morpho/types/Errors.sol";
 import {Bundle} from "contracts/morpho/types/BundleTypes.sol";
+import {NestShareMathLib} from "contracts/morpho/libraries/NestShareMathLib.sol";
 
 contract MockMorphoForAsyncUnloop {
     mapping(bytes32 => MorphoPosition) internal _positions;
@@ -118,18 +120,27 @@ contract NestUnlooperTest is Test {
         });
         marketId = market.id();
 
+        // Borrow totals must exceed any single position's shares (as on real Morpho, where a user is part of
+        // the total). Use a 1:1 index large enough to dwarf the seeded positions so share-accounting is exact.
         morpho.setMarket(
             marketId,
             Market({
                 totalSupplyAssets: 1_000_000e18,
                 totalSupplyShares: 0,
-                totalBorrowAssets: 1e18,
-                totalBorrowShares: 1e18,
+                totalBorrowAssets: 1_000_000e18,
+                totalBorrowShares: 1_000_000e18,
                 lastUpdate: uint128(block.timestamp),
                 fee: 0
             })
         );
         morpho.setPosition(marketId, user, uint128(150 ether), uint128(200 ether));
+
+        // Seed Morpho with ample loan-token liquidity so deleverage bundles flash-loan in a single shot
+        // by default. Loop-specific tests lower this via `_setMorphoLoanLiquidity`.
+        loanToken.mint(address(morpho), 1_000_000 ether);
+        // Seed the share-token redeem buffer (asset held by the vault's share contract) so looped redeems pass the
+        // route-agnostic instant/async redeem-liquidity guard. `getInstantRedeemLiquidity` reads this balance.
+        loanToken.mint(address(collateralToken), 1_000_000 ether);
 
         unlooper = new NestUnlooper(
             address(this),
@@ -266,7 +277,7 @@ contract NestUnlooperTest is Test {
         (address flashToken, uint256 flashAssets, bytes memory callbackData) =
             abi.decode(_args(calls[0].data), (address, uint256, bytes));
         assertEq(flashToken, address(loanToken), "flash token");
-        assertEq(flashAssets, bundle.ma.repay, "flash amount");
+        assertEq(flashAssets, bundle.ma.flashRepay, "flash amount");
 
         Call[] memory callbackBundle = abi.decode(callbackData, (Call[]));
         assertEq(callbackBundle.length, 3, "callback length");
@@ -369,9 +380,10 @@ contract NestUnlooperTest is Test {
         Bundle memory bundle = unlooper.getAsyncBundle(market, vault, _teller(), user, false);
         assertEq(bundle.intent.target.loan, 0, "target borrow");
         assertEq(bundle.intent.target.collateral, 0, "target collateral");
-        assertApproxEqAbs(bundle.ma.repay, 150 ether, 4e8, "repay");
+        assertApproxEqAbs(bundle.ma.repay, 150 ether, 4e8, "repay (real debt)");
+        assertApproxEqAbs(bundle.ma.flashRepay, 150.15 ether, 4e8, "flashRepay (debt + full-repay buffer)");
         assertEq(bundle.ma.withdrawCollateral, 200 ether, "withdraw collateral");
-        assertApproxEqAbs(bundle.va.redeem, 75 ether, 4e8, "redeem shares");
+        assertApproxEqAbs(bundle.va.redeem, 75.075 ether, 4e8, "redeem shares");
 
         Call[] memory calls = unlooper.getAsyncBundleCalls(market, vault, _teller(), user, false);
         assertEq(calls.length, 2, "top-level call count");
@@ -379,7 +391,7 @@ contract NestUnlooperTest is Test {
         assertEq(_selector(calls[1].data), NestAdapter.adapterSweep.selector, "sweep selector");
 
         (, uint256 flashAssets, bytes memory callbackData) = abi.decode(_args(calls[0].data), (address, uint256, bytes));
-        assertEq(flashAssets, bundle.ma.repay, "flash amount");
+        assertEq(flashAssets, bundle.ma.flashRepay, "flash amount");
 
         Call[] memory callbackBundle = abi.decode(callbackData, (Call[]));
         assertEq(callbackBundle.length, 3, "callback length");
@@ -416,6 +428,154 @@ contract NestUnlooperTest is Test {
         assertEq(withdrawAssets, 200 ether, "withdraw assets");
         assertEq(withdrawOnBehalf, user, "withdraw owner");
         assertEq(withdrawReceiver, ADAPTER, "withdraw receiver");
+    }
+
+    function test_getAsyncBundleCalls_modernRoute_loopsWhenLiquidityBelowRepay() external {
+        // Morpho holds less loan-token liquidity (100e18) than the full-exit repay (~150e18),
+        // so the deleverage must split into sequential flash loans.
+        _setMorphoLoanLiquidity(100 ether);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+
+        vm.prank(user);
+        unlooper.updateUnloopRequest(market, 0, 0, deadline); // full exit
+
+        Bundle memory bundle = unlooper.getAsyncBundle(market, vault, _teller(), user, false);
+        uint256 totalRepay = bundle.ma.repay;
+        uint256 totalWithdraw = bundle.ma.withdrawCollateral;
+        assertGt(totalRepay, 100 ether, "repay exceeds available liquidity");
+
+        Call[] memory calls = unlooper.getAsyncBundleCalls(market, vault, _teller(), user, false);
+
+        // Two flash-loan chunks + one sweep.
+        assertEq(calls.length, 3, "looped call count");
+        assertEq(_selector(calls[0].data), GeneralAdapter1.morphoFlashLoan.selector, "chunk0 flash loan");
+        assertEq(_selector(calls[1].data), GeneralAdapter1.morphoFlashLoan.selector, "chunk1 flash loan");
+        assertEq(_selector(calls[2].data), NestAdapter.adapterSweep.selector, "sweep");
+
+        // Chunk 0 flash-loans the initial liquidity; chunk 1 flashes the EXACT assets Morpho's `shares = max`
+        // repay will pull, derived by replaying Morpho's borrow-share accounting (chunk 0 repaid 100e18 by
+        // assets, burning `toSharesDown`; the final pull is `toAssetsUp` of the residual borrow shares).
+        (, uint256 flash0, bytes memory cb0Data) = abi.decode(_args(calls[0].data), (address, uint256, bytes));
+        (, uint256 flash1, bytes memory cb1Data) = abi.decode(_args(calls[1].data), (address, uint256, bytes));
+        assertEq(flash0, 100 ether, "chunk0 flash == initial liquidity");
+
+        uint256 burned = SharesMathLib.toSharesDown(100 ether, 1_000_000 ether, 1_000_000 ether);
+        uint256 expectedFinal = NestShareMathLib.applyBuffer(
+            SharesMathLib.toAssetsUp(
+                uint256(150 ether) - burned, uint256(1_000_000 ether) - 100 ether, uint256(1_000_000 ether) - burned
+            )
+        );
+        assertEq(flash1, expectedFinal, "chunk1 flash == buffered Morpho shares=max pull");
+        assertApproxEqAbs(flash0 + flash1, 150.05 ether, 1e6, "chunks == debt + final-chunk buffer");
+
+        // Chunk 0 is an intermediate, assets-based partial repay (delta mode -> repayAssets set, shares 0),
+        // and withdraws exactly the collateral it redeems.
+        Call[] memory cb0 = abi.decode(cb0Data, (Call[]));
+        (, uint256 repay0Assets, uint256 repay0Shares,,,) =
+            abi.decode(_args(cb0[0].data), (MarketParams, uint256, uint256, uint256, address, bytes));
+        assertEq(repay0Assets, 100 ether, "chunk0 partial repay assets");
+        assertEq(repay0Shares, 0, "chunk0 repays by assets, not shares");
+        (, uint256 withdraw0,,) = abi.decode(_args(cb0[1].data), (MarketParams, uint256, address, address));
+        (, uint256 redeem0,,,,) =
+            abi.decode(_args(cb0[2].data), (INestVaultCore, uint256, uint256, address, address, address));
+        assertEq(redeem0, 50 ether, "chunk0 redeem shares (100 / rate 2)");
+        assertEq(withdraw0, redeem0, "chunk0 withdraws exactly its redeem slice");
+
+        // Chunk 1 is the final full-exit chunk: clears residual debt via shares=max and withdraws all
+        // remaining target collateral (its redeem slice + the equity returned by the sweep).
+        Call[] memory cb1 = abi.decode(cb1Data, (Call[]));
+        (, uint256 repay1Assets, uint256 repay1Shares,,,) =
+            abi.decode(_args(cb1[0].data), (MarketParams, uint256, uint256, uint256, address, bytes));
+        assertEq(repay1Assets, 0, "final chunk clears via shares");
+        assertEq(repay1Shares, type(uint256).max, "final chunk repay shares = max");
+        (, uint256 withdraw1,,) = abi.decode(_args(cb1[1].data), (MarketParams, uint256, address, address));
+        (, uint256 redeem1,,,,) =
+            abi.decode(_args(cb1[2].data), (INestVaultCore, uint256, uint256, address, address, address));
+        assertEq(withdraw1, totalWithdraw - redeem0, "final chunk withdraws remaining target collateral");
+
+        // Cross-chunk invariants: withdrawals reconstruct the target exactly; each chunk's redeem funds its
+        // own flash loan at the mock's rate of 2.
+        assertEq(withdraw0 + withdraw1, totalWithdraw, "withdraws sum to target");
+        assertApproxEqAbs(redeem0 + redeem1, (flash0 + flash1) / 2, 1, "chunked redeem covers chunked flashes (rate 2)");
+    }
+
+    function test_getAsyncBundleCalls_modernRoute_finalChunkPullsExactMorphoSharesOnNonUnitIndex() external {
+        // Non-1:1 borrow index (110 assets / 100 shares = 1.1x, i.e. accrued interest). The intermediate chunk
+        // repays by assets and Morpho burns shares rounded down, so the full-exit final `shares = max` repay
+        // pulls slightly more than the linear remainder. The builder simulates Morpho's exact share accounting,
+        // so the final chunk's flash loan equals the precise assets Morpho transfers plus the full-repay buffer.
+        morpho.setMarket(
+            marketId,
+            Market({
+                totalSupplyAssets: 1_000_000e18,
+                totalSupplyShares: 0,
+                totalBorrowAssets: 110 ether,
+                totalBorrowShares: 100 ether,
+                lastUpdate: uint128(block.timestamp),
+                fee: 0
+            })
+        );
+        morpho.setPosition(marketId, user, uint128(100 ether), uint128(200 ether)); // loan ~110, collateral 200
+        _setMorphoLoanLiquidity(70 ether); // forces 2 chunks: 70 then the residual
+
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        vm.prank(user);
+        unlooper.updateUnloopRequest(market, 0, 0, deadline); // full exit -> final repays shares=max
+
+        Call[] memory calls = unlooper.getAsyncBundleCalls(market, vault, _teller(), user, false);
+        assertEq(calls.length, 3, "two flash loans + sweep");
+
+        (, uint256 flash0,) = abi.decode(_args(calls[0].data), (address, uint256, bytes));
+        (, uint256 flash1, bytes memory cb1Data) = abi.decode(_args(calls[1].data), (address, uint256, bytes));
+        assertEq(flash0, 70 ether, "chunk0 flash == initial liquidity");
+
+        // Replay Morpho's accounting: chunk 0 repays 70e18 assets (burns toSharesDown), final pulls toAssetsUp
+        // of the residual borrow shares at the post-repay market state.
+        uint256 burned = SharesMathLib.toSharesDown(70 ether, 110 ether, 100 ether);
+        uint256 expectedFinal = NestShareMathLib.applyBuffer(
+            SharesMathLib.toAssetsUp(
+                uint256(100 ether) - burned, uint256(110 ether) - 70 ether, uint256(100 ether) - burned
+            )
+        );
+        assertEq(flash1, expectedFinal, "final chunk flash == buffered Morpho shares=max pull");
+        assertGe(flash1, 110 ether - 70 ether, "final chunk flash covers the rounding-up residual (no shortfall)");
+
+        // Final chunk still clears via shares=max, and its redeem is sized to the exact pull (rate 2, no fee).
+        Call[] memory cb1 = abi.decode(cb1Data, (Call[]));
+        (, uint256 repay1Assets, uint256 repay1Shares,,,) =
+            abi.decode(_args(cb1[0].data), (MarketParams, uint256, uint256, uint256, address, bytes));
+        assertEq(repay1Assets, 0, "final chunk repays via shares");
+        assertEq(repay1Shares, type(uint256).max, "final chunk repay shares = max");
+        (, uint256 redeem1,,,,) =
+            abi.decode(_args(cb1[2].data), (INestVaultCore, uint256, uint256, address, address, address));
+        assertEq(
+            redeem1, Math.mulDiv(expectedFinal, 1e18, 2 ether, Math.Rounding.Ceil), "final redeem covers exact pull"
+        );
+    }
+
+    function test_getAsyncBundleCalls_modernRoute_singleShotWhenLiquidityExactlyCoversRepay() external {
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        vm.prank(user);
+        unlooper.updateUnloopRequest(market, 0, 0, deadline);
+
+        Bundle memory bundle = unlooper.getAsyncBundle(market, vault, _teller(), user, false);
+        _setMorphoLoanLiquidity(bundle.ma.flashRepay); // exactly enough for the buffered flash -> no loop
+
+        Call[] memory calls = unlooper.getAsyncBundleCalls(market, vault, _teller(), user, false);
+        assertEq(calls.length, 2, "single flash loan when liquidity covers repay");
+        assertEq(_selector(calls[0].data), GeneralAdapter1.morphoFlashLoan.selector, "flash loan");
+        assertEq(_selector(calls[1].data), NestAdapter.adapterSweep.selector, "sweep");
+    }
+
+    function test_getAsyncBundleCalls_modernRoute_revertsWhenNoLoanLiquidity() external {
+        _setMorphoLoanLiquidity(0);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        vm.prank(user);
+        unlooper.updateUnloopRequest(market, 0, 0, deadline);
+
+        Bundle memory bundle = unlooper.getAsyncBundle(market, vault, _teller(), user, false);
+        vm.expectRevert(NestBundleErrors.ZeroLiquidity.selector);
+        unlooper.getAsyncBundleCalls(market, vault, _teller(), user, false);
     }
 
     function testFuzz_execute_acceptsValidRedemptionRequest(
@@ -645,6 +805,17 @@ contract NestUnlooperTest is Test {
 
     function _teller() internal view returns (TellerWithMultiAssetSupport) {
         return TellerWithMultiAssetSupport(payable(address(tellerLike)));
+    }
+
+    /// @dev Sets Morpho's loan-token balance to `target`, the liquidity ceiling read when chunking.
+    function _setMorphoLoanLiquidity(uint256 target) internal {
+        uint256 bal = loanToken.balanceOf(address(morpho));
+        if (bal > target) {
+            vm.prank(address(morpho));
+            loanToken.transfer(address(0xdead), bal - target);
+        } else if (bal < target) {
+            loanToken.mint(address(morpho), target - bal);
+        }
     }
 
     function _selector(bytes memory data) internal pure returns (bytes4 selector_) {

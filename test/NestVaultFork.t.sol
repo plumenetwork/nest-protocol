@@ -131,7 +131,7 @@ contract NestVaultForkTest is Events, Helper {
 
     /// @dev Test for checking the version of the NestVault contract.
     function testVersion() public view {
-        assertEq(NEST_VAULT.version(), "0.0.2");
+        assertEq(NEST_VAULT.version(), "1.1.0");
     }
 
     /// @dev Test for checking the interfaces supported by the NestVault contract.

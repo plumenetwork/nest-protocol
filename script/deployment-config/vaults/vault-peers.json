@@ -1,0 +1,222 @@
+{
+  "_note": "LayerZero endpoint IDs (eids) per vault. Solana OFT Store base58 addresses are also decoded to bytes32 hex.",
+  "_chainIdToEid": {
+    "98866 (Plume)": 30370,
+    "1 (Ethereum)": 30101,
+    "42161 (Arbitrum)": 30110,
+    "9745 (Plasma)": 30383,
+    "56 (BNB)": 30102,
+    "480 (World)": 30319,
+    "Solana": 30168
+  },
+  "pUSD": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nALPHA": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383,
+      30319,
+      30168
+    ],
+    "solanaOftStore": "0x32fb72516c83d2f297f211dd2e4a898f4ead5271389b0ba706058f5c57cbb727"
+  },
+  "nTBILL": {
+    "eids": [
+      30370,
+      30101,
+      30110,
+      30383,
+      30102,
+      30319,
+      30168
+    ],
+    "solanaOftStore": "0x3dffc47c3faf5e4b049e2ac17f7884ec3a3fadd86faecaaf71f1bd88a0dc81b5"
+  },
+  "nYIELD": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nUSDY": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nELIXIR": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "inELIXIR": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nBASIS": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383,
+      30319,
+      30168
+    ],
+    "solanaOftStore": "0xf5e5ad610232c1d4c35578d40497914e60bafd5d82d4f8f1a2ecbc947c43e4cf"
+  },
+  "nCREDIT": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383
+    ]
+  },
+  "nINSTO": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383
+    ]
+  },
+  "nPAYFI": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nBTC": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nETF": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "inALPHA": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nACRDX": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383
+    ]
+  },
+  "nMNRL": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nWISDOM": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383,
+      30168
+    ],
+    "solanaOftStore": "0x065277a59aa2f0f3d0fb92bc32f2e6bcef1cdfbb53ffce7141b6801fb15be29a"
+  },
+  "nOPAL": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383,
+      30319,
+      30168
+    ],
+    "solanaOftStore": "0xdb735552be0fc4429c153de2e91965f798511e9f89660553a4396a72a5782586"
+  },
+  "nGPRIME": {
+    "eids": [
+      30370,
+      30101,
+      30102,
+      30383
+    ]
+  },
+  "nSCOPE": {
+    "eids": [
+      30370,
+      30168
+    ],
+    "solanaOftStore": "0x8db6db8873f455f94d5dfce7a6d5c787622fac3cb60f7b26b2fb2208cf3fb642"
+  },
+  "nLCRD": {
+    "eids": [
+      30370,
+      30168
+    ],
+    "solanaOftStore": "0x794275eef4752dd27925cbffe0f28e58cb0f72d404ab17caffa8eaf943a4a0fb"
+  },
+  "nTEST": {
+    "eids": [
+      30370,
+      30168
+    ],
+    "solanaOftStore": "0x6460ef525ccb765eb1b1959e824fa39624242666b9a9cb818d5abdaf3de3938c"
+  },
+  "nAXI": {
+    "eids": [
+      30370
+    ]
+  },
+  "nPERENA": {
+    "eids": [
+      30370,
+      30168
+    ],
+    "solanaOftStore": "0x0b0cc0e204712c9bd0796f651aa4f6b3ca9d1a9b374231ef0dd45b35bf76ad14"
+  },
+  "nFALCON": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nBYBIT1": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nBINANCE1": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nREAH1": {
+    "eids": [
+      30370,
+      30101
+    ]
+  },
+  "nREAH2": {
+    "eids": [
+      30370,
+      30101
+    ]
+  }
+}

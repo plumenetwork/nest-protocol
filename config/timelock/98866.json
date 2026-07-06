@@ -1,0 +1,12 @@
+{
+  "_comment": "nCREDIT BOOTSTRAP config: SHORT delays (30/60) for initial wiring; raise to 172800/604800 later via timelock updateDelay. protocolProposers = operational Safe (0xa08A...). adminMultisig = bootstrap council Safe (0x65c595..., rotate to a disjoint hardened council via AT before full go-live). openExecution=false (only delay is temporary). BEFORE go-live: raise delays, rotate adminMultisig to a disjoint council, add >=1 partnerCanceller.",
+  "protocolDelay": 30,
+  "adminDelay": 60,
+  "adminMultisig": "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+  "openExecution": true,
+  "adminProposers": [],
+  "adminExecutors": [],
+  "protocolProposers": ["0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"],
+  "protocolExecutors": [],
+  "partnerCancellers": []
+}

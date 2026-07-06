@@ -47,11 +47,15 @@ jobs:
           forge test --mc AuthUpgradeable
         id: unit-test
 
+      - name: Run Forge mock & library tests
+        run: |
+          forge test --match-contract 'BundleCalldataLib|BundleBuildLib|MorphoMarketLib|MockMorphoScenarios'
+        id: mock-test
+
       - name: Run Forge fork tests
         env:
           ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
           PLUME_RPC_URL: ${{ secrets.PLUME_RPC_URL }}
         run: |
-          forge test --fork-url $PLUME_RPC_URL --mc '^Nest'
-          forge test --fork-url $PLUME_RPC_URL --mc BoringVaultSY -vv
+          forge test --fork-url $PLUME_RPC_URL --no-match-contract 'AuthUpgradeable|BundleCalldataLib|BundleBuildLib|MorphoMarketLib|MockMorphoScenarios'
         id: fork-test

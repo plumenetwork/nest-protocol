@@ -91,4 +91,11 @@ interface ITokenMessengerV2 {
      * @return The minimum fee for the given amount
      */
     function getMinFeeAmount(uint256 amount) external view returns (uint256);
+
+    /**
+     * @notice Returns the remote TokenMessenger identity for a CCTP domain
+     * @param domain The CCTP destination domain
+     * @return The remote TokenMessenger as bytes32 (zero if unset)
+     */
+    function remoteTokenMessengers(uint32 domain) external view returns (bytes32);
 }

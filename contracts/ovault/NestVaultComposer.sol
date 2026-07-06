@@ -65,6 +65,13 @@ contract NestVaultComposer is VaultComposerAsyncUpgradeable, AuthUpgradeable {
         __NestVaultComposer_init();
     }
 
+    /// @notice Returns the version of the NestVaultComposer contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.2.0";
+    }
+
     /// @dev Internal initializer function to set up approvals for the predicate proxy
     function __NestVaultComposer_init() internal onlyInitializing {
         /// @dev Approve the predicate proxy to pull assets for deposits
@@ -176,27 +183,28 @@ contract NestVaultComposer is VaultComposerAsyncUpgradeable, AuthUpgradeable {
                         ASYNC REDEEM FUNCTIONS (NEST-SPECIFIC)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Fulfills a pending redemption for a specific user
+    /// @notice Fulfills a pending redemption for a specific (redeemer, receiver) pair
     /// @dev Callable by authorized roles, calls internal _fulfillRedeem
     /// @param _srcEid   uint32  Endpoint ID associated with the redemption request
-    /// @param _redeemer bytes32 Identifier of the user whose redemption is being fulfilled
+    /// @param _redeemer bytes32 Main account whose redemption is being fulfilled
+    /// @param _receiver bytes32 Asset receiver / token account identifying the request bucket
     /// @param _shares   uint256 Number of shares being fulfilled
-    /// @return _assets  uint256 Amount of assets made claimable for the user
-    function fulfillRedeem(uint32 _srcEid, bytes32 _redeemer, uint256 _shares)
+    /// @return _assets  uint256 Amount of assets made claimable for the pair
+    function fulfillRedeem(uint32 _srcEid, bytes32 _redeemer, bytes32 _receiver, uint256 _shares)
         external
         virtual
         requiresAuth
         nonReentrant
         returns (uint256 _assets)
     {
-        _assets = _fulfillRedeem(_srcEid, _redeemer, _shares);
+        _assets = _fulfillRedeem(_srcEid, _redeemer, _receiver, _shares);
     }
 
-    /// @notice Updates a pending redemption request and returns excess shares to the user
+    /// @notice Updates a pending redemption request and returns excess shares to the redeemer
     /// @dev Callable by authorized roles. Can only reduce shares, not increase.
     /// @param _srcEid        uint32    Source endpoint ID
-    /// @param _redeemer      bytes32   User identifier
-    /// @param _sendParam     SendParam Contains new share amount in amountLD and destination for returned shares
+    /// @param _redeemer      bytes32   Main account that owns the request (and receives the returned shares)
+    /// @param _sendParam     SendParam Contains new share amount in amountLD; carries the receiver in SendParam.to on input
     /// @param _refundAddress address   Address to receive excess LayerZero fee refunds
     function updateRequestRedeemAndSend(
         uint32 _srcEid,
@@ -207,11 +215,11 @@ contract NestVaultComposer is VaultComposerAsyncUpgradeable, AuthUpgradeable {
         _updateRequestRedeemAndSend(_srcEid, _redeemer, _sendParam, _refundAddress, msg.value);
     }
 
-    /// @notice Redeems claimable shares and sends the resulting assets cross-chain
-    /// @dev Callable by authorized roles. User must have claimable balance from fulfilled redemption.
+    /// @notice Redeems claimable shares and sends the resulting assets cross-chain to the receiver
+    /// @dev Callable by authorized roles. Pair must have claimable balance from fulfilled redemption.
     /// @param _srcEid        uint32    Source endpoint ID
-    /// @param _redeemer      bytes32   User identifier
-    /// @param _sendParam     SendParam Contains share amount in amountLD and destination for assets
+    /// @param _redeemer      bytes32   Main account claiming the redemption (must own the request bucket)
+    /// @param _sendParam     SendParam Contains share amount in amountLD; carries the receiver / destination in SendParam.to
     /// @param _refundAddress address   Address to receive excess LayerZero fee refunds
     function finishRedeemAndSend(uint32 _srcEid, bytes32 _redeemer, SendParam memory _sendParam, address _refundAddress)
         external
@@ -227,12 +235,18 @@ contract NestVaultComposer is VaultComposerAsyncUpgradeable, AuthUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Toggle compose blocking for a specific LayerZero guid
+    /// @notice Block compose execution for a specific LayerZero guid
     /// @dev    Callable by authorized roles only. Blocked guids revert in lzCompose.
-    /// @param _guid    bytes32 LayerZero compose guid
-    /// @param _blocked bool    Block status to set
-    function setBlockCompose(bytes32 _guid, bool _blocked) external requiresAuth {
-        _setBlockCompose(_guid, _blocked);
+    /// @param _guid bytes32 LayerZero compose guid
+    function blockCompose(bytes32 _guid) external requiresAuth {
+        _setBlockCompose(_guid, true);
+    }
+
+    /// @notice Unblock compose execution for a specific LayerZero guid
+    /// @dev    Callable by authorized roles only.
+    /// @param _guid bytes32 LayerZero compose guid
+    function unblockCompose(bytes32 _guid) external requiresAuth {
+        _setBlockCompose(_guid, false);
     }
 
     /// @notice Set the maximum minMsgValue considered retryable in lzCompose
@@ -330,7 +344,7 @@ contract NestVaultComposer is VaultComposerAsyncUpgradeable, AuthUpgradeable {
     /// @dev Overrides the quote send logic to use previewInstantRedeem for accurate asset amount estimation.
     ///      When quoting for ASSET_OFT (redeem path), uses NestVault.previewInstantRedeem to account for fees.
     ///      When quoting for SHARE_OFT (deposit path), uses standard vault.previewDeposit.
-    /// @param _from          address      The address to check maxRedeem/maxDeposit limits against
+    /// @param _from          address      The address to check maxDeposit limit against (deposit path only)
     /// @param _targetOFT     address      The OFT to use: ASSET_OFT for redeem, SHARE_OFT for deposit
     /// @param _vaultInAmount uint256      Input amount: shares for redeem, assets for deposit
     /// @param _sendParam     SendParam    The LayerZero send parameters (amountLD will be overwritten)
@@ -341,15 +355,14 @@ contract NestVaultComposer is VaultComposerAsyncUpgradeable, AuthUpgradeable {
         override
         returns (MessagingFee memory)
     {
+        /// @dev Local settlement uses `_sendLocal` with zero fee; skip LayerZero `quoteSend`
+        if (_sendParam.dstEid == VAULT_EID()) return MessagingFee(0, 0);
+
         IERC4626 vault = VAULT();
 
         /// @dev When quoting the asset OFT, if the input is shares, SendParam.amountLD must be assets (and vice versa)
+        /// @dev Remove maxRedeem gate since sync instantRedeem does not spend async claimableRedeem state
         if (_targetOFT == ASSET_OFT()) {
-            uint256 maxRedeem = vault.maxRedeem(_from);
-            if (_vaultInAmount > maxRedeem) {
-                revert ERC4626.ERC4626ExceededMaxRedeem(_from, _vaultInAmount, maxRedeem);
-            }
-
             (_sendParam.amountLD,) = INestVaultCore(address(vault)).previewInstantRedeem(_vaultInAmount);
         } else {
             uint256 maxDeposit = vault.maxDeposit(_from);

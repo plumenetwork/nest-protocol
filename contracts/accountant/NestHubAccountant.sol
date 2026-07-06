@@ -44,10 +44,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param isPaused                       bool    whether or not this contract is paused
     /// @param minimumUpdateDelayInSeconds    uint32  the minimum amount of time that must pass between exchange rate updates
     /// @param managementFee                  uint32  annualized management fee (1e6 = 100%)
-    /// @param highWaterMark                  uint96  highest gross rate ever recorded
-    /// @param lastGrossRate                  uint96  gross market rate from the most recent update; used as the management-fee discount basis
-    /// @param clawbackReferenceRate          uint96  clawback baseline checkpoint; seeded from the stored post-fee rate on gains and recoveries, and checkpointed to the current gross rate after clawbacks
-    /// @param hwmLastUpdateTimestamp         uint64  timestamp when the high-water mark was last set or reset
+    /// @param lastGrossRate                  uint96  posted rate from the most recent update, net of fee liabilities; used as the management-fee and performance-fee discount basis
     struct AccountantState {
         address payoutAddress;
         uint128 feesOwedInBase;
@@ -59,8 +56,14 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         bool isPaused;
         uint32 minimumUpdateDelayInSeconds;
         uint32 managementFee;
-        uint96 highWaterMark;
         uint96 lastGrossRate;
+    }
+
+    /// @param highWaterMark          uint96 highest gross rate ever recorded
+    /// @param clawbackReferenceRate  uint96 clawback baseline checkpoint; seeded from the stored post-fee rate on gains and recoveries, and checkpointed to the current gross rate after clawbacks
+    /// @param hwmLastUpdateTimestamp uint64 timestamp when the high-water mark was last set or reset
+    struct PerformanceFeeCheckpoint {
+        uint96 highWaterMark;
         uint96 clawbackReferenceRate;
         uint64 hwmLastUpdateTimestamp;
     }
@@ -69,7 +72,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param hurdleRate             uint32  annualized minimum return before perf fee applies (0 = disabled)
     /// @param holdbackRate           uint32  fraction of perf fee held in reserve (0 = disabled, 1e6 = 100%)
     /// @param crystallizationWindow  uint32  seconds before holdback reserve becomes claimable (0 = immediate)
-    /// @param epochsPerWindow        uint32  number of epochs per crystallization window for reserve batching
+    /// @param epochsPerWindow        uint32  number of epochs per crystallization window for reserve batching (0 = single epoch per window)
     struct PerformanceFeeConfig {
         uint32 performanceFee;
         uint32 hurdleRate;
@@ -78,8 +81,8 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         uint32 epochsPerWindow;
     }
 
-    /// @param isPeggedToBase whether or not the asset is 1:1 with the base asset
-    /// @param rateProvider the rate provider for this asset if `isPeggedToBase` is false
+    /// @param isPeggedToBase   bool            whether or not the asset is 1:1 with the base asset
+    /// @param rateProvider     IRateProvider   the rate provider for this asset if `isPeggedToBase` is false
     struct RateProviderData {
         bool isPeggedToBase;
         IRateProvider rateProvider;
@@ -96,21 +99,42 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param batchHead    uint64   index of the oldest active batch
     /// @param batchTail    uint64   index of the next batch to write
     /// @param totalReserve uint128  sum of all active batch amounts (cache)
-    struct ReserveState {
+    struct PerformanceFeeReserve {
         mapping(uint256 => ReserveBatch) batches;
         uint64 batchHead;
         uint64 batchTail;
         uint128 totalReserve;
     }
 
-    /// @notice Storage struct for NestHubAccountant
-    /// @dev    Used by library functions that need access to full storage
+    /// @notice Bundle of all performance-fee related state (config + checkpoint + reserve)
+    /// @param  config     PerformanceFeeConfig     performance-fee parameters
+    /// @param  checkpoint PerformanceFeeCheckpoint HWM, clawback reference, and HWM-update timestamp
+    /// @param  reserve    PerformanceFeeReserve    aggregate reserve state for holdback batching/clawback
+    struct PerformanceFeeState {
+        PerformanceFeeConfig config;
+        PerformanceFeeCheckpoint checkpoint;
+        PerformanceFeeReserve reserve;
+    }
+
+    /// @notice Root storage struct for NestHubAccountant (ERC-7201 namespaced)
+    /// @param  accountantState     AccountantState     core rate, fee, and checkpoint state
+    /// @param  rateProviderData    mapping             per-asset rate provider configuration for quote conversions
+    /// @param  totalPendingShares  uint256             global shares awaiting redemption across all vaults sharing this accountant
+    /// @param  performanceFeeState PerformanceFeeState performance-fee config, HWM checkpoint, and holdback reserve
+    /// @param  managementFeeCarry  uint256             accrued management fee not yet realized, in base terms scaled by DENOMINATOR * ONE_YEAR
     struct NestAccountantStorage {
         AccountantState accountantState;
         mapping(ERC20 => RateProviderData) rateProviderData;
         uint256 totalPendingShares;
-        PerformanceFeeConfig performanceFeeConfig;
-        ReserveState reserveState;
+        PerformanceFeeState performanceFeeState;
+        uint256 managementFeeCarry;
+    }
+
+    /// @notice Categorizes a `FeeAccrued` event by origin
+    /// @dev    Crystallization only ever releases performance-fee holdback, so matured batches map to `Performance`.
+    enum FeeType {
+        Management,
+        Performance
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -165,6 +189,22 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  feeAsset address The asset in which the fees were denominated
     /// @param  amount   uint256 The amount of fees claimed
     event FeesClaimed(address indexed feeAsset, uint256 amount);
+
+    /// @notice Emitted whenever `feesOwedInBase` increases
+    /// @param  feeType uint8   The `FeeType` (0 = Management, 1 = Performance) that triggered the accrual
+    /// @param  amount  uint256 The base-denominated amount added to `feesOwedInBase`
+    event FeeAccrued(uint8 indexed feeType, uint256 amount);
+
+    /// @notice Emitted when accrued fees are waived back to shareholders
+    /// @param  amount        uint256 The base-denominated amount of fees waived
+    /// @param  remainingOwed uint256 The total accrued liability remaining after the waiver
+    ///                                (feesOwedInBase + managementFeeCarry / (DENOMINATOR * ONE_YEAR))
+    event FeesWaived(uint256 amount, uint256 remainingOwed);
+
+    /// @notice Emitted when reserved holdback is waived back to shareholders
+    /// @param  amount           uint256 The base-denominated reserve amount waived
+    /// @param  remainingReserve uint256 The `totalReserve` remaining after the waiver
+    event ReserveWaived(uint256 amount, uint256 remainingReserve);
 
     /// @notice Emitted when global pending shares are updated
     /// @param  oldPendingShares uint256 The previous total pending shares
@@ -244,11 +284,6 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  currentTime uint64 The timestamp when the update occurred
     event ExchangeRateUpdated(uint96 oldRate, uint96 newRate, uint64 currentTime);
 
-    /// @notice Emitted when the exchange rate is updated is paused
-    /// @param  oldRate     uint96 The previous exchange rate
-    /// @param  newRate     uint96 The newly set exchange rate
-    /// @param  currentTime uint64 The timestamp when the update occurred
-
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
@@ -285,7 +320,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  _hurdleRate                     uint32  Annualized hurdle rate (1e6 = 100%, 0 = disabled)
     /// @param  _holdbackRate                   uint32  Fraction of perf fee held in reserve (1e6 = 100%, 0 = disabled)
     /// @param  _crystallizationWindow          uint32  Seconds before holdback becomes claimable (0 = immediate)
-    /// @param  _epochsPerWindow                uint32  Number of reserve epochs per crystallization window (0 = disabled)
+    /// @param  _epochsPerWindow                uint32  Number of reserve epochs per crystallization window (0 = single epoch per window)
     /// @param  _owner                          address The address of the owner of the accountant
     function initialize(
         uint256 _totalSharesLastUpdate,
@@ -305,14 +340,16 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         if (_startingExchangeRate == 0) revert Errors.InvalidRate();
         if (_owner == address(0)) revert Errors.ZeroAddress();
 
-        AccountantState storage state = _getNestAccountantStorage().accountantState;
+        NestAccountantStorage storage $ = _getNestAccountantStorage();
+        AccountantState storage state = $.accountantState;
+        PerformanceFeeCheckpoint storage checkpoint = $.performanceFeeState.checkpoint;
         state.lastUpdateTimestamp = uint64(block.timestamp);
         state.totalSharesLastUpdate = _totalSharesLastUpdate.toUint128();
         state.exchangeRate = _startingExchangeRate;
-        state.highWaterMark = _startingExchangeRate;
-        state.hwmLastUpdateTimestamp = uint64(block.timestamp);
         state.lastGrossRate = _startingExchangeRate;
-        state.clawbackReferenceRate = _startingExchangeRate;
+        checkpoint.highWaterMark = _startingExchangeRate;
+        checkpoint.hwmLastUpdateTimestamp = uint64(block.timestamp);
+        checkpoint.clawbackReferenceRate = _startingExchangeRate;
 
         _setPayoutAddress(_payoutAddress);
         _setAllowedExchangeRateChangeUpper(_allowedExchangeRateChangeUpper);
@@ -329,11 +366,19 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         __Auth_init(_owner, Authority(address(0)));
     }
 
-    /// @notice Updates the exchange rate from the gross market rate of the underlying investment strategy
+    /// @notice Returns the version of the NestHubAccountant contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.1.0";
+    }
+
+    /// @notice Updates the exchange rate from the per-share NAV of the underlying investment strategy
     /// @dev    Invalid updates revert if too early or outside the configured bounds. Successful updates
     ///         accrue elapsed management and performance fees, then store the post-fee net exchange rate.
-    ///         Callable by authorized accounts.
-    /// @param  _newExchangeRate   uint96  The gross market rate of the underlying investment strategy
+    ///         Callable by authorized accounts. The posted rate must be net of `feesOwedInBase` and the
+    ///         holdback reserve.
+    /// @param  _newExchangeRate   uint96  Strategy NAV per share, net of accrued fee liabilities
     /// @param  _totalShareSupply  uint128 The global total share supply across all chains
     function updateExchangeRate(uint96 _newExchangeRate, uint128 _totalShareSupply) external requiresAuth {
         NestAccountantStorage storage $ = _getNestAccountantStorage();
@@ -348,7 +393,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
             revert Errors.MinimumUpdateDelayNotPassed();
         }
 
-        _crystallizeMaturedBatches();
+        _crystallizeReserve(true);
 
         uint256 _postManagementFeeRate = _accrueManagementFees(_newExchangeRate, _totalShares, _oneShare);
 
@@ -387,7 +432,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
 
         if (state.isPaused) revert Errors.Paused();
 
-        _crystallizeMaturedBatches();
+        _crystallizeReserve(true);
 
         if (state.feesOwedInBase == 0) revert Errors.ZeroFeesOwed();
 
@@ -413,6 +458,49 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         SafeERC20.safeTransferFrom(IERC20(address(_feeAsset)), SHARE, state.payoutAddress, _feesOwedInFeeAsset);
 
         emit FeesClaimed(address(_feeAsset), _feesOwedInFeeAsset);
+    }
+
+    /// @notice Waives accrued fees, forfeiting them back to vault shareholders
+    /// @dev    Liability = `feesOwedInBase` plus `managementFeeCarry / (DENOMINATOR * ONE_YEAR)`.
+    ///         Draws from the unrealized carry first; the stored exchange rate is NOT retroactively adjusted.
+    ///         The holdback reserve is separate — use `waiveReserve`.
+    /// @param  _amount uint128 The amount of fees to waive, denominated in base
+    function waiveFees(uint128 _amount) external requiresAuth {
+        if (_amount == 0) revert Errors.ZeroAmount();
+
+        NestAccountantStorage storage $ = _getNestAccountantStorage();
+        AccountantState storage state = $.accountantState;
+
+        uint256 _scale = DENOMINATOR * ONE_YEAR;
+        uint256 _carry = $.managementFeeCarry;
+        uint256 _carryBase = _carry / _scale;
+        uint256 _owed = uint256(state.feesOwedInBase) + _carryBase;
+        if (_amount > _owed) revert Errors.InsufficientBalance();
+
+        if (_amount <= _carryBase) {
+            $.managementFeeCarry = _carry - uint256(_amount) * _scale;
+        } else {
+            $.managementFeeCarry = _carry % _scale;
+            state.feesOwedInBase = uint128(uint256(state.feesOwedInBase) - (_amount - _carryBase));
+        }
+
+        emit FeesWaived(_amount, _owed - _amount);
+    }
+
+    /// @notice Waives reserved performance-fee holdback, forfeiting it back to shareholders
+    /// @dev    Removes `_amount` from `totalReserve` newest-batch-first (reuses clawback removal)
+    ///         WITHOUT crediting the rate. Does not crystallize; the exchange rate is NOT retroactively adjusted.
+    /// @param  _amount uint128 The reserve amount to waive, denominated in base
+    function waiveReserve(uint128 _amount) external requiresAuth {
+        if (_amount == 0) revert Errors.ZeroAmount();
+
+        PerformanceFeeReserve storage rs = _getNestAccountantStorage().performanceFeeState.reserve;
+        uint128 _reserve = rs.totalReserve;
+
+        if (_amount > _reserve) revert Errors.InsufficientBalance();
+        if (_amount > 0) _clawbackReserve(_amount);
+
+        emit ReserveWaived(_amount, _reserve - _amount);
     }
 
     /// @notice Pause this contract, which causes safe rate calls and fee claims to revert
@@ -460,31 +548,44 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
 
     /// @notice Update the management fee to a new value
     /// @dev    Accrues elapsed management fees under the previous rate before applying the new rate.
-    ///         Callable by OWNER_ROLE
+    ///         If time has advanced, the normal exchange-rate update delay must have elapsed. A fee change
+    ///         may follow `updateExchangeRate` in the same timestamp because no additional accrual occurs.
     /// @dev    Operators should call `updateExchangeRate` before changing the management fee.
     ///         This function accrues old-fee charges using the stale `lastGrossRate`,
     ///         so changing the fee during a drawdown can overaccrue management fees for the elapsed interval.
+    /// @dev    The accrued fee reduces `exchangeRate` and is subject to the same `allowedExchangeRateChangeLower`
+    ///         bound as `updateExchangeRate`; if a long elapsed interval accrues a haircut large enough to
+    ///         breach it, this call reverts with `RateOutOfBounds`. Call `updateExchangeRate` first to drain
+    ///         the accrued fee within bounds, then retry.
     /// @param  _managementFee    uint32  The new management fee, expressed in basis points where 1e6 = 100%
     /// @param  _totalShareSupply uint128 The global total share supply across all chains
     function updateManagementFee(uint32 _managementFee, uint128 _totalShareSupply) external virtual requiresAuth {
-        AccountantState storage state = _getNestAccountantStorage().accountantState;
+        NestAccountantStorage storage $ = _getNestAccountantStorage();
+        AccountantState storage state = $.accountantState;
         uint32 _oldFee = state.managementFee;
 
         // Accrue elapsed management fees under the old fee before switching
         uint64 _currentTime = uint64(block.timestamp);
         uint256 _timeDelta = _currentTime - state.lastUpdateTimestamp;
         if (_timeDelta > 0) {
+            if (_currentTime < state.lastUpdateTimestamp + state.minimumUpdateDelayInSeconds) {
+                revert Errors.MinimumUpdateDelayNotPassed();
+            }
+
             uint256 _totalShares = uint256(_totalShareSupply);
             if (_totalShareSupply < IERC20(SHARE).totalSupply()) revert Errors.TotalSupplyBelowLocal();
 
-            if (_oldFee > 0) {
+            if (_oldFee > 0 && _totalShares > 0) {
                 uint256 _oneShare = 10 ** ERC20(SHARE).decimals();
-                uint256 _rateBasis = uint256(state.lastGrossRate);
-                uint256 _mgmtDiscount = _annualize(_rateBasis * uint256(_oldFee), _timeDelta);
-                if (_totalShares > 0) {
-                    uint256 _shareSupplyBasis = Math.min(uint256(state.totalSharesLastUpdate), _totalShares);
-                    uint256 _mgmtFeeBase = _mgmtDiscount.mulDivDown(_shareSupplyBasis, _oneShare);
-                    state.feesOwedInBase = (uint256(state.feesOwedInBase) + _mgmtFeeBase).toUint128();
+                // Charge on and deduct from the current net rate.
+                uint256 _oldRate = uint256(state.exchangeRate);
+                uint256 _newRate = _accrueManagementFees(_oldRate, _totalShares, _oneShare);
+                if (_newRate < _oldRate.mulDivDown(state.allowedExchangeRateChangeLower, DENOMINATOR)) {
+                    revert Errors.RateOutOfBounds();
+                }
+                if (_newRate != _oldRate) {
+                    state.exchangeRate = _newRate.toUint96();
+                    emit ExchangeRateUpdated(_oldRate.toUint96(), _newRate.toUint96(), _currentTime);
                 }
             }
 
@@ -507,20 +608,27 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  _performanceFee uint32 The new performance fee, expressed where 1e6 = 100%
     function updatePerformanceFee(uint32 _performanceFee) external requiresAuth {
         NestAccountantStorage storage $ = _getNestAccountantStorage();
-        PerformanceFeeConfig storage feeConfig = $.performanceFeeConfig;
+        PerformanceFeeConfig storage feeConfig = $.performanceFeeState.config;
+        PerformanceFeeCheckpoint storage checkpoint = $.performanceFeeState.checkpoint;
         AccountantState storage state = $.accountantState;
         uint32 _oldFee = feeConfig.performanceFee;
         _setPerformanceFee(_performanceFee);
-        // Enabling perf fees (0 -> >0) establishes a fresh HWM baseline at the current gross rate
-        // so that gains accrued while fees were disabled are not retroactively taxed.
+
         if (_oldFee == 0 && _performanceFee > 0) {
             if (state.lastGrossRate == 0) revert Errors.InvalidRate();
-            state.highWaterMark = state.lastGrossRate;
-            state.hwmLastUpdateTimestamp = uint64(block.timestamp);
-            if ($.reserveState.totalReserve == 0) {
-                state.clawbackReferenceRate = state.lastGrossRate;
+            // Enabling perf fees (0 -> >0) re-anchors the baseline. Ratchet the HWM up only:
+            // never down on a depressed lastGrossRate, and up to capture gains accrued while fees were disabled.
+            if (state.lastGrossRate > checkpoint.highWaterMark) {
+                checkpoint.highWaterMark = state.lastGrossRate;
             }
+            // Preserve the clawback reference while reserve is outstanding.
+            if ($.performanceFeeState.reserve.totalReserve == 0) {
+                checkpoint.clawbackReferenceRate = state.lastGrossRate;
+            }
+            // Reset the hurdle clock so it accrues only from re-enable, not over the disabled window.
+            checkpoint.hwmLastUpdateTimestamp = uint64(block.timestamp);
         }
+
         emit PerformanceFeeUpdated(_oldFee, _performanceFee);
     }
 
@@ -529,11 +637,11 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  _newHighWaterMark uint96 The new high-water mark in base terms
     function resetHighWaterMark(uint96 _newHighWaterMark) external requiresAuth {
         if (_newHighWaterMark == 0) revert Errors.InvalidRate();
-        AccountantState storage state = _getNestAccountantStorage().accountantState;
-        uint96 _oldHWM = state.highWaterMark;
-        state.highWaterMark = _newHighWaterMark;
-        state.hwmLastUpdateTimestamp = uint64(block.timestamp);
-        state.clawbackReferenceRate = _newHighWaterMark;
+        PerformanceFeeCheckpoint storage checkpoint = _getNestAccountantStorage().performanceFeeState.checkpoint;
+        uint96 _oldHWM = checkpoint.highWaterMark;
+        checkpoint.highWaterMark = _newHighWaterMark;
+        checkpoint.hwmLastUpdateTimestamp = uint64(block.timestamp);
+        checkpoint.clawbackReferenceRate = _newHighWaterMark;
         emit HighWaterMarkUpdated(_oldHWM, _newHighWaterMark);
     }
 
@@ -543,22 +651,22 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  _hurdleRate uint32 The new annualized hurdle rate, expressed where 1e6 = 100%
     function updateHurdleRate(uint32 _hurdleRate) external requiresAuth {
         NestAccountantStorage storage $ = _getNestAccountantStorage();
-        AccountantState storage state = $.accountantState;
-        uint32 _oldRate = $.performanceFeeConfig.hurdleRate;
+        PerformanceFeeCheckpoint storage checkpoint = $.performanceFeeState.checkpoint;
+        uint32 _oldRate = $.performanceFeeState.config.hurdleRate;
         if (_oldRate == _hurdleRate) revert Errors.SameValue();
         uint64 _currentTime = uint64(block.timestamp);
 
         // Accrue elapsed hurdle rate into the HWM
         if (_oldRate > 0) {
-            uint256 _timeDelta = _currentTime - state.hwmLastUpdateTimestamp;
+            uint256 _timeDelta = _currentTime - checkpoint.hwmLastUpdateTimestamp;
             if (_timeDelta > 0) {
-                uint256 _hwm = uint256(state.highWaterMark);
-                state.highWaterMark = (_hwm + _annualize(_oldRate * _hwm, _timeDelta)).toUint96();
+                uint256 _hwm = uint256(checkpoint.highWaterMark);
+                checkpoint.highWaterMark = (_hwm + _annualize(_oldRate * _hwm, _timeDelta)).toUint96();
             }
         }
 
         // new rate only accrues prospectively from the reset timestamp.
-        state.hwmLastUpdateTimestamp = _currentTime;
+        checkpoint.hwmLastUpdateTimestamp = _currentTime;
 
         _setHurdleRate(_hurdleRate);
         emit HurdleRateUpdated(_oldRate, _hurdleRate);
@@ -568,7 +676,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @dev    Callable by authorized accounts.
     /// @param  _holdbackRate uint32 The new holdback rate, expressed where 1e6 = 100%
     function updateHoldbackRate(uint32 _holdbackRate) external requiresAuth {
-        uint32 _oldRate = _getNestAccountantStorage().performanceFeeConfig.holdbackRate;
+        uint32 _oldRate = _getNestAccountantStorage().performanceFeeState.config.holdbackRate;
         _setHoldbackRate(_holdbackRate);
         emit HoldbackRateUpdated(_oldRate, _holdbackRate);
     }
@@ -577,9 +685,9 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @dev    Callable by authorized accounts.
     /// @param  _crystallizationWindow uint32 The new reserve crystallization window in seconds
     function updateCrystallizationWindow(uint32 _crystallizationWindow) external requiresAuth {
-        uint32 _oldWindow = _getNestAccountantStorage().performanceFeeConfig.crystallizationWindow;
+        uint32 _oldWindow = _getNestAccountantStorage().performanceFeeState.config.crystallizationWindow;
         _setCrystallizationWindow(_crystallizationWindow);
-        if (_crystallizationWindow == 0 && _oldWindow > 0) _crystallizeMaturedBatches();
+        if (_crystallizationWindow == 0 && _oldWindow > 0) _crystallizeReserve(true);
         emit CrystallizationWindowUpdated(_oldWindow, _crystallizationWindow);
     }
 
@@ -587,7 +695,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @dev    Callable by authorized accounts.
     /// @param  _epochsPerWindow uint32 The new number of epochs per crystallization window
     function updateEpochsPerWindow(uint32 _epochsPerWindow) external requiresAuth {
-        uint32 _oldEpochs = _getNestAccountantStorage().performanceFeeConfig.epochsPerWindow;
+        uint32 _oldEpochs = _getNestAccountantStorage().performanceFeeState.config.epochsPerWindow;
         _setEpochsPerWindow(_epochsPerWindow);
         emit EpochsPerWindowUpdated(_oldEpochs, _epochsPerWindow);
     }
@@ -667,6 +775,14 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         _rateInQuote = getRateInQuote(_quote);
     }
 
+    /// @notice Get the rate provider data configured for an asset
+    /// @dev    Returns the zero-valued struct (isPeggedToBase false, rateProvider address(0)) if unset
+    /// @param  asset The ERC20 token to look up
+    /// @return The `RateProviderData` for `asset`
+    function getRateProviderData(ERC20 asset) external view returns (RateProviderData memory) {
+        return _getNestAccountantStorage().rateProviderData[asset];
+    }
+
     /// @notice Get the complete current state of the accountant
     /// @dev    Returns the full AccountantState struct containing all configuration and tracking parameters
     /// @return The current AccountantState including exchange rate, fees, bounds, timestamps, and pause status
@@ -674,21 +790,48 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         return _getNestAccountantStorage().accountantState;
     }
 
+    /// @notice Returns the share token associated with this accountant
+    /// @return The share token address
+    function share() external view returns (address) {
+        return SHARE;
+    }
+
     /// @notice Get the current performance-fee configuration
     /// @return The current `PerformanceFeeConfig`
     function getPerformanceFeeConfig() public view returns (PerformanceFeeConfig memory) {
-        return _getNestAccountantStorage().performanceFeeConfig;
+        return _getNestAccountantStorage().performanceFeeState.config;
+    }
+
+    /// @notice Get the current fee checkpoint
+    /// @return The current `PerformanceFeeCheckpoint` including HWM, clawback reference, and HWM timestamp
+    function getPerformanceFeeCheckpoint() public view returns (PerformanceFeeCheckpoint memory) {
+        return _getNestAccountantStorage().performanceFeeState.checkpoint;
     }
 
     /// @notice Get aggregate reserve accounting state
     /// @return totalReserve_ uint128 The total holdback reserve currently tracked
     /// @return batchHead_    uint64  The index of the oldest active reserve batch
     /// @return batchTail_    uint64  The index of the next reserve batch slot to write
-    function getReserveState() public view returns (uint128 totalReserve_, uint64 batchHead_, uint64 batchTail_) {
-        ReserveState storage rs = _getNestAccountantStorage().reserveState;
+    function getPerformanceFeeReserve()
+        public
+        view
+        returns (uint128 totalReserve_, uint64 batchHead_, uint64 batchTail_)
+    {
+        PerformanceFeeReserve storage rs = _getNestAccountantStorage().performanceFeeState.reserve;
         totalReserve_ = rs.totalReserve;
         batchHead_ = rs.batchHead;
         batchTail_ = rs.batchTail;
+    }
+
+    /// @notice Outstanding fee liabilities the posted rate is net of, by bucket
+    /// @return feesOwed_ uint256 Realized fees awaiting claim, in base
+    /// @return carry_    uint256 Unrealized management-fee carry in base (managementFeeCarry / (DENOMINATOR * ONE_YEAR))
+    /// @return reserve_  uint256 Performance-fee holdback reserve, in base
+    function feeLiabilities() external view returns (uint256 feesOwed_, uint256 carry_, uint256 reserve_) {
+        NestAccountantStorage storage $ = _getNestAccountantStorage();
+        feesOwed_ = $.accountantState.feesOwedInBase;
+        carry_ = $.managementFeeCarry / (DENOMINATOR * ONE_YEAR);
+        reserve_ = $.performanceFeeState.reserve.totalReserve;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -727,13 +870,13 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev    Deducts annualized management fee from the gross rate and accrues the fee in base terms.
+    /// @dev    Deducts annualized management fee from the posted rate and accrues the fee in base terms.
     ///         Uses min(lastGrossRate, _newExchangeRate) as the discount basis to avoid retroactive
     ///         overcharging when the rate rises during the interval.
-    /// @param  _newExchangeRate             uint256 The gross market rate of the underlying investment strategy
+    /// @param  _newExchangeRate       uint256 Posted rate the fee is charged on and deducted from
     /// @param  _totalShares           uint256 Current total share supply
     /// @param  _oneShare              uint256 Share-scaling factor based on share decimals
-    /// @return _postManagementFeeRate uint256 The exchange rate after management-fee deduction
+    /// @return _postManagementFeeRate uint256 The rate after management-fee deduction
     function _accrueManagementFees(uint256 _newExchangeRate, uint256 _totalShares, uint256 _oneShare)
         internal
         returns (uint256 _postManagementFeeRate)
@@ -741,24 +884,41 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         _postManagementFeeRate = _newExchangeRate;
 
         if (_totalShares > 0) {
-            AccountantState storage state = _getNestAccountantStorage().accountantState;
+            NestAccountantStorage storage $ = _getNestAccountantStorage();
+            AccountantState storage state = $.accountantState;
+
+            if (state.managementFee == 0) return _postManagementFeeRate;
+
             uint256 _rateBasis = Math.min(uint256(state.lastGrossRate), _newExchangeRate);
-            uint256 _mgmtDiscount =
-                _annualize(_rateBasis * uint256(state.managementFee), block.timestamp - state.lastUpdateTimestamp);
             uint256 _shareSupplyBasis = Math.min(uint256(state.totalSharesLastUpdate), _totalShares);
-            uint256 _rateHaircut = _mgmtDiscount.mulDivDown(_shareSupplyBasis, _totalShares);
-            _postManagementFeeRate = Math.saturatingSub(_newExchangeRate, _rateHaircut);
+
+            uint256 _timeDelta = block.timestamp - state.lastUpdateTimestamp;
+            // Share-scaled management fee accrual
+            uint256 _perShareFeeAccrual = _rateBasis * uint256(state.managementFee) * _timeDelta;
+            // Accrue in base terms, carrying the sub-unit remainder (denominator DENOMINATOR * ONE_YEAR)
+            uint256 _feeAccrued = $.managementFeeCarry + Math.mulDiv(_perShareFeeAccrual, _shareSupplyBasis, _oneShare);
+            // Per-share rate deduction equivalent to the whole base-fee units accrued so far.
+            uint256 _rateHaircut = (_feeAccrued / (DENOMINATOR * ONE_YEAR)).mulDivDown(_oneShare, _totalShares);
+            // Management fee amount re-derived from the haircut so the booked amount matches the rate drop exactly.
             uint256 _mgmtFeeBase = _rateHaircut.mulDivDown(_totalShares, _oneShare);
 
-            state.feesOwedInBase = (uint256(state.feesOwedInBase) + _mgmtFeeBase).toUint128();
+            // Realize only when the fee is representable in base units, so rate, reserve, and fee move together.
+            if (_mgmtFeeBase > 0) {
+                _postManagementFeeRate = Math.saturatingSub(_newExchangeRate, _rateHaircut);
+                state.feesOwedInBase = (uint256(state.feesOwedInBase) + _mgmtFeeBase).toUint128();
+                emit FeeAccrued(uint8(FeeType.Management), _mgmtFeeBase);
+                // Carry forward the remainder to avoid losing precision on small fees.
+                $.managementFeeCarry = _feeAccrued - _mgmtFeeBase * (DENOMINATOR * ONE_YEAR);
+            } else {
+                $.managementFeeCarry = _feeAccrued;
+            }
         }
     }
 
     /// @dev    Computes performance fee on gains above the hurdle-adjusted HWM, updates the HWM,
-    ///         handles holdback reserve splits, and clawback on drawdowns.
-    ///         HWM is tracked in gross terms so the comparison is always gross vs gross,
-    ///         avoiding circular dependency between performance fee and the net rate.
-    /// @param  _newExchangeRate             uint256 The gross market rate of the underlying investment strategy
+    ///         handles holdback reserve splits, and clawback on drawdowns. HWM is tracked in
+    ///         posted-rate terms; clawback credits reserve on top (posted rate is net of it).
+    /// @param  _newExchangeRate       uint256 Posted rate: strategy NAV per share net of prior fee liabilities
     /// @param  _postManagementFeeRate uint256 Exchange rate after management-fee accrual
     /// @param  _totalShares           uint256 Current total share supply
     /// @param  _oneShare              uint256 Share-scaling factor based on share decimals
@@ -772,34 +932,45 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         uint64 _currentTime
     ) internal returns (uint256 _postFeeRate) {
         NestAccountantStorage storage $ = _getNestAccountantStorage();
-        PerformanceFeeConfig storage feeConfig = $.performanceFeeConfig;
+        PerformanceFeeConfig storage feeConfig = $.performanceFeeState.config;
         AccountantState storage state = $.accountantState;
-        uint256 _hwm = uint256(state.highWaterMark);
-        uint256 _totalReserve = uint256($.reserveState.totalReserve);
+        PerformanceFeeCheckpoint storage checkpoint = $.performanceFeeState.checkpoint;
+        uint256 _hwm = uint256(checkpoint.highWaterMark);
+        uint256 _totalReserve = uint256($.performanceFeeState.reserve.totalReserve);
         _postFeeRate = _postManagementFeeRate;
 
         // Apply hurdle rate to HWM
         uint256 _postHurdleHWM =
-            _hwm + _annualize(uint256(feeConfig.hurdleRate) * _hwm, _currentTime - state.hwmLastUpdateTimestamp);
+            _hwm + _annualize(uint256(feeConfig.hurdleRate) * _hwm, _currentTime - checkpoint.hwmLastUpdateTimestamp);
+
+        // Zero supply: crystallize any reserve to the manager.
+        // Prevents stale clawback state or pre-supply gains from affecting the next cohort.
+        if (_totalShares == 0) {
+            _crystallizeReserve(false);
+            checkpoint.highWaterMark = _newExchangeRate.toUint96();
+            checkpoint.hwmLastUpdateTimestamp = _currentTime;
+            checkpoint.clawbackReferenceRate = _postFeeRate.toUint96();
+            return _postFeeRate;
+        }
 
         if (feeConfig.performanceFee == 0 || _newExchangeRate <= _postHurdleHWM) {
-            uint256 _clawbackRef = uint256(state.clawbackReferenceRate);
+            uint256 _clawbackRef = uint256(checkpoint.clawbackReferenceRate);
 
             // Recovery: ratchet reference back up
             if (_newExchangeRate >= _hwm && _clawbackRef < _postFeeRate) {
-                state.clawbackReferenceRate = _postFeeRate.toUint96();
+                checkpoint.clawbackReferenceRate = _postFeeRate.toUint96();
                 return _postFeeRate;
             }
 
-            // Clawback shortfall from reserve
-            if (_newExchangeRate < _clawbackRef && _totalReserve > 0 && _totalShares > 0) {
+            // Clawback shortfall from reserve (supply is non-zero here; zero supply returns above)
+            if (_newExchangeRate < _clawbackRef && _totalReserve > 0) {
                 uint256 _shortfallBase = (_clawbackRef - _newExchangeRate).mulDivDown(_totalShares, _oneShare);
                 uint256 _clawback = Math.min(_shortfallBase, _totalReserve);
                 uint256 _clawbackRate = _clawback.mulDivDown(_oneShare, _totalShares);
                 if (_clawbackRate > 0) {
                     _clawbackReserve(_clawbackRate.mulDivUp(_totalShares, _oneShare));
                     _postFeeRate += _clawbackRate;
-                    state.clawbackReferenceRate = _newExchangeRate.toUint96();
+                    checkpoint.clawbackReferenceRate = _newExchangeRate.toUint96();
                 }
             }
             return _postFeeRate;
@@ -810,27 +981,33 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         uint256 _gainBase = _gain.mulDivDown(_totalShares, _oneShare);
         uint256 _perfFeeBase = _gainBase.mulDivDown(feeConfig.performanceFee, DENOMINATOR);
 
-        // Update HWM and seed clawback reference
-        state.highWaterMark = _newExchangeRate.toUint96();
-        state.hwmLastUpdateTimestamp = _currentTime;
-        state.clawbackReferenceRate = _postFeeRate.toUint96();
+        // A dust gain whose fee rounds away must not update the HWM/clawback baseline (stays captured for later).
+        if (_perfFeeBase == 0) return _postFeeRate;
 
-        if (_perfFeeBase == 0 || _totalShares == 0) return _postFeeRate;
-
-        // Derive per-share fee from aggregate
+        // Derive per-share fee from aggregate, then re-derive the fee from the floored haircut so the
+        // booked amount matches what holders lose; the sub-rate-unit residue stays with holders.
         uint256 _perfFeePerShare = _perfFeeBase.mulDivDown(_oneShare, _totalShares);
+        if (_perfFeePerShare == 0) return _postFeeRate;
+        _perfFeeBase = _perfFeePerShare.mulDivDown(_totalShares, _oneShare);
         _postFeeRate = Math.saturatingSub(_postManagementFeeRate, _perfFeePerShare);
 
-        // Update clawback reference
-        state.clawbackReferenceRate = _postFeeRate.toUint96();
+        // A fee is actually charged this update: ratchet the HWM and seed the clawback reference.
+        checkpoint.highWaterMark = _newExchangeRate.toUint96();
+        checkpoint.hwmLastUpdateTimestamp = _currentTime;
+        checkpoint.clawbackReferenceRate = _postFeeRate.toUint96();
 
         // Accrue performance fee with optional holdback
         if (feeConfig.holdbackRate > 0 && feeConfig.crystallizationWindow > 0) {
             uint256 _holdbackBase = _perfFeeBase.mulDivDown(feeConfig.holdbackRate, DENOMINATOR);
-            state.feesOwedInBase = (uint256(state.feesOwedInBase) + _perfFeeBase - _holdbackBase).toUint128();
+            uint256 _credited = _perfFeeBase - _holdbackBase;
+            if (_credited > 0) {
+                state.feesOwedInBase = (uint256(state.feesOwedInBase) + _credited).toUint128();
+                emit FeeAccrued(uint8(FeeType.Performance), _credited);
+            }
             _holdbackReserve(_holdbackBase, _currentTime);
-        } else {
+        } else if (_perfFeeBase > 0) {
             state.feesOwedInBase = (uint256(state.feesOwedInBase) + _perfFeeBase).toUint128();
+            emit FeeAccrued(uint8(FeeType.Performance), _perfFeeBase);
         }
     }
 
@@ -842,23 +1019,25 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         return _value.mulDivDown(_timeElapsed, DENOMINATOR * ONE_YEAR);
     }
 
-    /// @dev Crystallizes any reserve batches whose crystallization window has elapsed.
-    ///      When the window is 0 (immediate mode), all outstanding batches are crystallized.
-    function _crystallizeMaturedBatches() internal {
+    /// @dev Crystallizes reserve batches into `feesOwedInBase` in FIFO order.
+    ///      If `_maturedOnly`, stops at the first unmatured batch (window 0 = immediate).
+    ///      Otherwise crystallizes all batches, used when supply is zero since no holders remain.
+    /// @param _maturedOnly Whether to crystallize only matured batches.
+    function _crystallizeReserve(bool _maturedOnly) internal {
         NestAccountantStorage storage $ = _getNestAccountantStorage();
-        ReserveState storage rs = $.reserveState;
-        uint32 _window = $.performanceFeeConfig.crystallizationWindow;
+        PerformanceFeeReserve storage rs = $.performanceFeeState.reserve;
 
         if (rs.batchHead == rs.batchTail) return;
 
         uint64 _head = rs.batchHead;
         uint64 _tail = rs.batchTail;
-        uint256 _crystallized = 0;
         uint64 _startHead = _head;
+        uint32 _window = $.performanceFeeState.config.crystallizationWindow;
+        uint256 _crystallized = 0;
 
         while (_head < _tail) {
             ReserveBatch storage _batch = rs.batches[_head];
-            if (_window > 0 && uint256(_batch.timestamp) + uint256(_window) > block.timestamp) break;
+            if (_maturedOnly && _window > 0 && uint256(_batch.timestamp) + uint256(_window) > block.timestamp) break;
             _crystallized += _batch.amount;
             delete rs.batches[_head];
             _head++;
@@ -869,6 +1048,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         if (_crystallized > 0) {
             rs.totalReserve -= _crystallized.toUint128();
             $.accountantState.feesOwedInBase = (uint256($.accountantState.feesOwedInBase) + _crystallized).toUint128();
+            emit FeeAccrued(uint8(FeeType.Performance), _crystallized);
         }
     }
 
@@ -879,7 +1059,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
         if (_amount == 0) return;
 
         NestAccountantStorage storage $ = _getNestAccountantStorage();
-        ReserveState storage rs = $.reserveState;
+        PerformanceFeeReserve storage rs = $.performanceFeeState.reserve;
         uint256 _epochDuration = _getEpochDuration();
         uint64 _tail = rs.batchTail;
 
@@ -904,7 +1084,7 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @dev    Claws back reserve in LIFO order (newest batches first).
     /// @param  _amount uint256 The reserve amount to return to investors
     function _clawbackReserve(uint256 _amount) internal {
-        ReserveState storage rs = _getNestAccountantStorage().reserveState;
+        PerformanceFeeReserve storage rs = _getNestAccountantStorage().performanceFeeState.reserve;
         uint64 _tail = rs.batchTail;
         uint64 _head = rs.batchHead;
         uint256 _remaining = _amount;
@@ -929,9 +1109,11 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @dev    Returns the epoch duration for reserve batching.
     /// @return uint256 The duration of each reserve epoch in seconds
     function _getEpochDuration() internal view returns (uint256) {
-        PerformanceFeeConfig storage feeConfig = _getNestAccountantStorage().performanceFeeConfig;
-        if (feeConfig.crystallizationWindow == 0 || feeConfig.epochsPerWindow == 0) return 0;
-        uint256 _duration = uint256(feeConfig.crystallizationWindow) / uint256(feeConfig.epochsPerWindow);
+        PerformanceFeeConfig storage feeConfig = _getNestAccountantStorage().performanceFeeState.config;
+        if (feeConfig.crystallizationWindow == 0) return 0;
+        // epochsPerWindow == 0 collapses to one epoch so batches merge across the whole window.
+        uint256 _epochs = feeConfig.epochsPerWindow == 0 ? 1 : uint256(feeConfig.epochsPerWindow);
+        uint256 _duration = uint256(feeConfig.crystallizationWindow) / _epochs;
         return _duration > 1 days ? _duration : 1 days;
     }
 
@@ -971,35 +1153,35 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     /// @param  _performanceFee uint32 The new performance fee where 1e6 = 100%
     function _setPerformanceFee(uint32 _performanceFee) internal {
         if (_performanceFee > PERFORMANCE_FEE_CAP) revert Errors.PerformanceFeeTooLarge();
-        _getNestAccountantStorage().performanceFeeConfig.performanceFee = _performanceFee;
+        _getNestAccountantStorage().performanceFeeState.config.performanceFee = _performanceFee;
     }
 
     /// @dev    Internal setter that validates and stores hurdle rate.
     /// @param  _hurdleRate uint32 The new hurdle rate where 1e6 = 100%
     function _setHurdleRate(uint32 _hurdleRate) internal {
         if (_hurdleRate > HURDLE_RATE_CAP) revert Errors.HurdleRateTooLarge();
-        _getNestAccountantStorage().performanceFeeConfig.hurdleRate = _hurdleRate;
+        _getNestAccountantStorage().performanceFeeState.config.hurdleRate = _hurdleRate;
     }
 
     /// @dev    Internal setter that validates and stores holdback rate.
     /// @param  _holdbackRate uint32 The new holdback rate where 1e6 = 100%
     function _setHoldbackRate(uint32 _holdbackRate) internal {
         if (_holdbackRate > DENOMINATOR) revert Errors.HoldbackRateTooLarge();
-        _getNestAccountantStorage().performanceFeeConfig.holdbackRate = _holdbackRate;
+        _getNestAccountantStorage().performanceFeeState.config.holdbackRate = _holdbackRate;
     }
 
     /// @dev    Internal setter that validates and stores crystallization window.
     /// @param  _crystallizationWindow uint32 The new crystallization window in seconds
     function _setCrystallizationWindow(uint32 _crystallizationWindow) internal {
         if (_crystallizationWindow > CRYSTALLIZATION_WINDOW_CAP) revert Errors.CrystallizationWindowTooLarge();
-        _getNestAccountantStorage().performanceFeeConfig.crystallizationWindow = _crystallizationWindow;
+        _getNestAccountantStorage().performanceFeeState.config.crystallizationWindow = _crystallizationWindow;
     }
 
     /// @dev    Internal setter that validates and stores epochs per window.
     /// @param  _epochsPerWindow uint32 The new number of epochs per crystallization window
     function _setEpochsPerWindow(uint32 _epochsPerWindow) internal {
         if (_epochsPerWindow > EPOCHS_PER_WINDOW_CAP) revert Errors.EpochsPerWindowTooLarge();
-        _getNestAccountantStorage().performanceFeeConfig.epochsPerWindow = _epochsPerWindow;
+        _getNestAccountantStorage().performanceFeeState.config.epochsPerWindow = _epochsPerWindow;
     }
 
     /// @dev    Internal setter that stores payout address.

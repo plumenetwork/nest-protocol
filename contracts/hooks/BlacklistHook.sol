@@ -75,13 +75,20 @@ contract BlacklistHook is Auth, ITransferHook {
         emit Unpaused();
     }
 
-    /// @notice Update blacklist status for an account.
+    /// @notice Add an account to the blacklist.
     /// @dev    Callable by authorized roles.
-    /// @param  _account       address The account to update.
-    /// @param  _isBlacklisted bool    Whether the account is blacklisted.
-    function setBlacklisted(address _account, bool _isBlacklisted) external requiresAuth {
-        isBlacklisted[_account] = _isBlacklisted;
-        emit BlacklistUpdated(_account, _isBlacklisted);
+    /// @param  _account address The account to blacklist.
+    function blacklist(address _account) external requiresAuth {
+        isBlacklisted[_account] = true;
+        emit BlacklistUpdated(_account, true);
+    }
+
+    /// @notice Remove an account from the blacklist.
+    /// @dev    Callable by authorized roles.
+    /// @param  _account address The account to unblacklist.
+    function unblacklist(address _account) external requiresAuth {
+        isBlacklisted[_account] = false;
+        emit BlacklistUpdated(_account, false);
     }
 
     /*//////////////////////////////////////////////////////////////

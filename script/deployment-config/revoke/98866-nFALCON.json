@@ -1,0 +1,75 @@
+{
+  "accountantParams": {
+    "allowedExchangeRateChangeLower": 999500,
+    "allowedExchangeRateChangeUpper": 1000500,
+    "managementFee": 0,
+    "minimumUpdateDelayInSeconds": 3600,
+    "payoutAddress": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "startingExchangeRate": 1000000,
+    "totalSharesLastUpdate": 0
+  },
+  "baseAssetSymbol": "USDC",
+  "common": {
+    "cctpRelayer": "0x7de01896d36Bea9CF072Ac64E41685418941d8bE",
+    "commonRolesAuthority": "0x93786916e1EE5913A45662a5986559f5785a5BA4",
+    "operatorRegistry": "0x7be743BC469a19564F716fF0Dd49A0bC4E84C47A",
+    "predicateProxy": "0xfC0c4222B3A0c9B060C0B959DEc62442036b9035",
+    "redeemOperator": "0xFCEE77441F7e14f24e2390e46DB45d9C6cf906CD",
+    "seizer": "0x927b4693e1e27CE085A3CFc1174bda94215e942B"
+  },
+  "composerParams": {
+    "maxRetryableValue": 10000000000000000000
+  },
+  "contracts": {
+    "accountant": "0x519B031635e855Fc1D064c480820055c655E7737",
+    "rolesAuthority": "0xC8462Ad8499b631A6d7D1c7338458C9DC7BDF2d6",
+    "share": "0x066D10E240999aea6798b2e2CA0bdac2923cbdFf",
+    "vaults": [
+      {
+        "address": "0x4738386D69cf5a7AC088Da2887FC0Df02795c5e7",
+        "assetSymbol": "USDC",
+        "composer": "0xBCAD976d4D40588aAd4a1601e91830c9f0C00648",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      },
+      {
+        "address": "0x74c9dB018d3767f8A4D67EC81bB805950Bf54c05",
+        "assetSymbol": "pUSD",
+        "composer": "0x0000000000000000000000000000000000000000",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      }
+    ]
+  },
+  "deployChainId": 98866,
+  "name": "Nest FalconX CLO",
+  "peers": [
+    98866,
+    1
+  ],
+  "predicateParams": {
+    "policyID": "x-nest-prod-005"
+  },
+  "roles": {
+    "UPDATE_EXCHANGE_RATE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "KEEPER_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
+    ],
+    "MANAGER_ROLE": [
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+    "CAN_SOLVE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ]
+  },
+  "symbol": "nFALCON",
+  "vaultParams": {
+    "minRate": 1
+  },
+  "vaultType": "NestVault"
+}

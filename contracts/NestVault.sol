@@ -41,7 +41,7 @@ contract NestVault is NestVaultPermit2 {
     /// @dev    This version is used to track contract upgrades.
     /// @return string A string representing the version of the contract.
     function version() public pure returns (string memory) {
-        return "0.0.2";
+        return "1.1.0";
     }
 
     /// @inheritdoc ERC4626Upgradeable

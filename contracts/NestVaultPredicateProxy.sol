@@ -65,6 +65,13 @@ contract NestVaultPredicateProxy is
         _initPredicateClient(_serviceManager, _policyID);
     }
 
+    /// @notice Returns the version of the NestVaultPredicateProxy contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.0.0";
+    }
+
     // ========================================= USER FUNCTIONS =========================================
 
     /// @notice Allows users to deposit into the NestVault, if PredicateProxy is not paused
@@ -134,6 +141,8 @@ contract NestVaultPredicateProxy is
             revert Errors.NestPredicateProxyPredicateUnauthorizedTransaction();
         }
 
+        uint256 _balanceBefore = _depositAsset.balanceOf(address(this));
+
         // Transfer tokens from sender to this contract using Permit2
         _permit2.permitTransferFrom(
             // The permit message. Spender will be inferred as the caller (us).
@@ -149,6 +158,11 @@ contract NestVaultPredicateProxy is
             // The packed signature that was the result of signing the EIP712 hash of `permit`.
             _signature
         );
+
+        // Check Permit2 transfer received the correct amount of tokens.
+        if (_depositAsset.balanceOf(address(this)) - _balanceBefore < _depositAmount) {
+            revert Errors.NestPredicateProxyInsufficientPermit2Transfer();
+        }
 
         // Approve vault to take assets from proxy
         _depositAsset.safeApprove(address(_vault), _depositAmount);

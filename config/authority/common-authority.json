@@ -1,0 +1,134 @@
+{
+  "capabilities": [
+    {
+      "role": 12,
+      "target": "predicateProxy",
+      "functions": [
+        "deposit(address,uint256,address,address,bytes32,(string,uint256,address[],bytes[]))",
+        "mint(address,uint256,address,address,bytes32,(string,uint256,address[],bytes[]))"
+      ],
+      "conditionalOn": "predicateProxy"
+    },
+    {
+      "role": 12,
+      "target": "cctpRelayer",
+      "functions": [
+        "send((uint32,bytes32,uint256,uint256,bytes,bytes,bytes),(uint256,uint256),address)"
+      ],
+      "conditionalOn": "cctpRelayer"
+    },
+    {
+      "role": 14,
+      "target": "redeemOperator",
+      "functions": [
+        "redeem((address,address,uint256))",
+        "fulfillAndRedeem((address,address,uint256))",
+        "redeemAll(address,address)",
+        "fulfillAndRedeemAll(address,address)",
+        "batchRedeem((address,address,uint256)[])",
+        "batchFulfillAndRedeem((address,address,uint256)[])",
+        "authorizeAsOperator(address,address,bool,bytes32,uint256,bytes)"
+      ],
+      "conditionalOn": "redeemOperator"
+    },
+    {
+      "role": 0,
+      "target": "shareSeizer",
+      "functions": [
+        "seize(address,address,address,uint256)",
+        "seizeAndRedeem(address,address,address,uint256)"
+      ],
+      "conditionalOn": "shareSeizer"
+    },
+    {
+      "role": 6,
+      "target": "blacklistHook",
+      "functions": [
+        "pause()"
+      ],
+      "conditionalOn": "blacklistHook"
+    },
+    {
+      "role": 0,
+      "target": "blacklistHook",
+      "functions": [
+        "unpause()"
+      ],
+      "conditionalOn": "blacklistHook"
+    },
+    {
+      "role": 6,
+      "target": "predicateProxy",
+      "functions": [
+        "pause()"
+      ],
+      "conditionalOn": "predicateProxy"
+    },
+    {
+      "role": 0,
+      "target": "predicateProxy",
+      "functions": [
+        "unpause()"
+      ],
+      "conditionalOn": "predicateProxy"
+    },
+    {
+      "role": 15,
+      "target": "blacklistHook",
+      "functions": [
+        "blacklist(address)"
+      ],
+      "conditionalOn": "shareSeizer"
+    },
+    {
+      "role": 14,
+      "target": "nestUnlooper",
+      "functions": [
+        "execute((address,address,address,address,uint256),address,address,address,bool)"
+      ],
+      "conditionalOn": "nestUnlooper"
+    }
+  ],
+  "publicCapabilities": [
+    {
+      "target": "operatorRegistry",
+      "functions": [
+        "setOperator(address,bool)"
+      ],
+      "conditionalOn": "operatorRegistry"
+    }
+  ],
+  "roleAssignments": [
+    { "user": "composer", "role": 12, "conditionalOn": "composer" },
+    { "user": "CAN_SOLVE_ROLE", "role": 14, "conditionalOn": "redeemOperator" },
+    { "user": "CAN_SOLVE_ROLE", "role": 14, "conditionalOn": "nestUnlooper" },
+    { "user": "owner", "role": 6, "conditionalOn": "ownerIsMsig" },
+    { "user": "owner", "role": 0, "conditionalOn": "ownerIsMsig" },
+    { "user": "shareSeizer", "role": 15, "conditionalOn": "shareSeizer" }
+  ],
+  "revokeCapabilities": [
+    {
+      "role": 0,
+      "target": "predicateProxy",
+      "functions": [
+        "pause()"
+      ],
+      "conditionalOn": "predicateProxy"
+    },
+    {
+      "role": 6,
+      "target": "blacklistHook",
+      "functions": [
+        "unpause()"
+      ],
+      "conditionalOn": "blacklistHook"
+    },
+    {
+      "role": 14,
+      "target": "0x732ecb959599Fd23c9242C804B2EC98EF53eb7ED",
+      "functions": [
+        "execute((address,address,address,address,uint256),address,address,address,bool)"
+      ]
+    }
+  ]
+}

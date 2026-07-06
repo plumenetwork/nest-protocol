@@ -64,6 +64,7 @@ library NestVaultDepositLogic {
         (uint256 _netAssets, uint256 _feeAmount) = _assets.calculatePostFeeAmounts(feeConfig.rate, feeConfig.flat);
         if (_feeAmount > 0) {
             $.claimableFees[NestVaultCoreTypes.Fees.Deposit] += _feeAmount;
+            emit NestVaultCoreTypes.FeeAccrued(uint8(NestVaultCoreTypes.Fees.Deposit), _receiver, _feeAmount);
         }
 
         SafeERC20.forceApprove(IERC20(address(assetToken)), address(shareToken), _netAssets);

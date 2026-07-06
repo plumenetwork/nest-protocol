@@ -91,6 +91,12 @@ contract NestBundlerTest is Test {
             })
         );
 
+        // Morpho holds ample loan-token liquidity so deleverage bundles flash-loan in a single shot
+        // (the looped path only engages when repay exceeds Morpho's loan-token balance).
+        vm.mockCall(
+            LOAN_TOKEN, abi.encodeWithSignature("balanceOf(address)", address(morpho)), abi.encode(type(uint256).max)
+        );
+
         bundler = new NestBundler(
             address(morpho),
             address(bundler3),
@@ -227,7 +233,7 @@ contract NestBundlerTest is Test {
         );
 
         assertEq(maxAssets, 20, "legacy maxAssets should follow withdrawCollateral asset value");
-        assertEq(minimumAssetsOut, 8, "legacy minimumAssetsOut should follow bundle redeem shares");
+        assertEq(minimumAssetsOut, 9, "legacy minimumAssetsOut should follow bundle redeem shares");
     }
 
     function test_getSyncBundleCalls_and_getAsyncBundleCalls_splitOwnerFundedRepayFromAsyncRedeem() external {
@@ -324,6 +330,39 @@ contract NestBundlerTest is Test {
         assertEq(asyncCalls.length, 2, "async should contain the full redeem flow + sweep");
     }
 
+    function test_getBundleCalls_splitsDeleverageWhenLiquidityBelowRepay() external {
+        // Full deleverage of a 70/100 position through the public bundler API. Morpho holds only 40 loan
+        // tokens, so the redeem-funded deleverage must split into two sequential flash loans (40 then 31,
+        // the remainder carrying the full-repay buffer).
+        _mockVaultAndTokenState(user, 0, 0);
+        _mockPreviewFulfillRedeem(100, 100, 0);
+        morpho.setPosition(marketId, user, 70, 100);
+        // Override the abundant default balance so the looped path engages.
+        vm.mockCall(LOAN_TOKEN, abi.encodeWithSignature("balanceOf(address)", address(morpho)), abi.encode(uint256(40)));
+
+        UserIntent memory intent = _targetIntent(0, 0); // full exit
+
+        (Call[] memory calls, Call[] memory approvalTxs) = bundler.getBundleCalls(
+            intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user
+        );
+
+        assertEq(approvalTxs.length, 0, "redeem-funded deleverage needs no owner approvals");
+        assertEq(calls.length, 3, "two flash loans + sweep");
+        assertEq(_selector(calls[0].data), bytes4(keccak256("morphoFlashLoan(address,uint256,bytes)")), "chunk0 flash");
+        assertEq(_selector(calls[1].data), bytes4(keccak256("morphoFlashLoan(address,uint256,bytes)")), "chunk1 flash");
+        assertEq(
+            _selector(calls[2].data),
+            bytes4(keccak256("adapterSweep((address,address,address,address,uint256),address)")),
+            "sweep"
+        );
+
+        (, uint256 flash0,) = abi.decode(_stripSelector(calls[0].data), (address, uint256, bytes));
+        (, uint256 flash1,) = abi.decode(_stripSelector(calls[1].data), (address, uint256, bytes));
+        assertEq(flash0, 40, "chunk0 flash == initial liquidity");
+        assertEq(flash1, 31, "chunk1 flash == buffered remainder");
+        assertEq(flash0 + flash1, 71, "chunks sum to buffered repay");
+    }
+
     function _intent() internal view returns (UserIntent memory intent) {
         intent.market = market;
         intent.assetAllowance = type(uint256).max;
@@ -412,6 +451,12 @@ contract NestBundlerTest is Test {
         vm.mockCall(LOAN_TOKEN, abi.encodeWithSignature("balanceOf(address)", owner), abi.encode(loanOwnerBalance));
         vm.mockCall(
             COLLATERAL_TOKEN, abi.encodeWithSignature("balanceOf(address)", owner), abi.encode(collateralOwnerBalance)
+        );
+
+        // Ample redeem buffer: `getInstantRedeemLiquidity` reads the asset held by the share token, which the
+        // route-agnostic looped redeem-liquidity guard validates for both instant and async routes.
+        vm.mockCall(
+            LOAN_TOKEN, abi.encodeWithSignature("balanceOf(address)", COLLATERAL_TOKEN), abi.encode(type(uint256).max)
         );
 
         vm.mockCall(LOAN_TOKEN, abi.encodeWithSignature("balanceOf(address)", address(bundler)), abi.encode(uint256(0)));

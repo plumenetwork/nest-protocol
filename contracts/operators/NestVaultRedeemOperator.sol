@@ -58,6 +58,13 @@ contract NestVaultRedeemOperator is Initializable, AuthUpgradeable, ReentrancyGu
         __Auth_init(_owner, Authority(address(0)));
     }
 
+    /// @notice Returns the version of the NestVaultRedeemOperator contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.0.0";
+    }
+
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/

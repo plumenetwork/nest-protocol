@@ -29,6 +29,7 @@ import {MockAuthority} from "test/mock/MockAuthority.sol";
 import {MockRateProvider} from "test/mock/MockRateProvider.sol";
 import {MockNestVaultOFT} from "test/mock/MockNestVaultOFT.sol";
 import {NestVaultOFT} from "contracts/NestVaultOFT.sol";
+import {BlacklistHook} from "contracts/hooks/BlacklistHook.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {Errors} from "contracts/types/Errors.sol";
@@ -299,6 +300,25 @@ contract NestVaultOFTTest is TestHelperOz5 {
 
         assertEq(aOFT.balanceOf(userA), initialBalance - amountToSendLD);
         assertEq(aOFT.balanceOf(address(this)), 0);
+    }
+
+    function test_send_reverts_when_boringVault_hook_blocks_sender() public {
+        BlacklistHook hook = new BlacklistHook(address(this), Authority(address(0)));
+        share.setBeforeTransferHook(address(hook));
+        hook.blacklist(userA);
+
+        uint256 tokensToSend = 1 ether;
+        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
+        SendParam memory sendParam =
+            SendParam(bEid, addressToBytes32(userB), tokensToSend, tokensToSend, options, "", "");
+        MessagingFee memory fee = aOFT.quoteSend(sendParam, false);
+
+        vm.prank(userA);
+        vm.expectRevert(abi.encodeWithSelector(BlacklistHook.BlacklistHook__Blacklisted.selector, userA));
+        aOFT.send{value: fee.nativeFee}(sendParam, fee, payable(address(this)));
+
+        assertEq(aOFT.balanceOf(userA), initialBalance);
+        assertEq(bOFT.balanceOf(userB), initialBalance);
     }
 
     function test_oft_credit() public virtual {

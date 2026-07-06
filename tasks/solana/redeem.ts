@@ -1,6 +1,6 @@
 import { task, types } from 'hardhat/config'
 import { HardhatRuntimeEnvironment } from 'hardhat/types'
-import { BigNumberish, utils } from 'ethers'
+import { BigNumber, utils } from 'ethers'
 import { createAssociatedToken, fetchMint, findAssociatedTokenPda, safeFetchToken } from '@metaplex-foundation/mpl-toolbox'
 import { fromWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { PublicKey } from '@solana/web3.js'
@@ -375,10 +375,16 @@ task(
                 logger.info(`Compose options with nativeDrop: ${minMsgValue} wei`)
             }
 
-            // Build mode-specific compose message
+            // Build mode-specific compose message.
+            // SendParam.to carries the USDC token account (ATA) for every mode:
+            //  - instant/finish: it is the asset destination where USDC lands.
+            //  - request/update: the composer binds it as the receiver / controller of the request bucket
+            //    keyed by (redeemer = compose sender, receiver = this ATA). Returned shares on an update are
+            //    routed by the composer to the redeemer (main account); they are NOT sent to this ATA.
+            // The main account (umiWalletSigner) is always the compose sender (redeemer) and is never used as `to`.
             const composeMsgBytes = buildComposeMsgForMode(
                 redeemMode,
-                redeemMode === "instant-redeem" || redeemMode === "finish-redeem" ? pdaBytes : bs58.decode(umiWalletSigner.publicKey),
+                pdaBytes,
                 args.srcEid,
                 args.dstEid,
                 amount,

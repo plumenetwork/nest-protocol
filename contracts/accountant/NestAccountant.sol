@@ -232,6 +232,13 @@ contract NestAccountant is Initializable, AuthUpgradeable {
         __Auth_init(_owner, Authority(address(0)));
     }
 
+    /// @notice Returns the version of the NestAccountant contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.1.0";
+    }
+
     /*//////////////////////////////////////////////////////////////
                             ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -457,12 +464,26 @@ contract NestAccountant is Initializable, AuthUpgradeable {
         _rateInQuote = getRateInQuote(_quote);
     }
 
+    /// @notice Get the rate provider data configured for an asset
+    /// @dev    Returns the zero-valued struct (isPeggedToBase false, rateProvider address(0)) if unset
+    /// @param  asset The ERC20 token to look up
+    /// @return The `RateProviderData` for `asset`
+    function getRateProviderData(ERC20 asset) external view returns (RateProviderData memory) {
+        return _getNestAccountantStorage().rateProviderData[asset];
+    }
+
     /// @notice Get the complete current state of the accountant
     /// @dev    Returns the full AccountantState struct containing all configuration and tracking parameters
     /// @return The current AccountantState including exchange rate, fees, bounds, timestamps, and pause status
     function getAccountantState() public view virtual returns (AccountantState memory) {
         NestAccountantStorage storage $ = _getNestAccountantStorage();
         return $.accountantState;
+    }
+
+    /// @notice Returns the share token associated with this accountant
+    /// @return The share token address
+    function share() external view returns (address) {
+        return SHARE;
     }
 
     /*//////////////////////////////////////////////////////////////

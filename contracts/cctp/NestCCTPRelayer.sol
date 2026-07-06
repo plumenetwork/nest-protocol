@@ -62,9 +62,9 @@ contract NestCCTPRelayer is BaseCCTPRelayer, IOFT {
     // Address of the LayerZero endpoint used by this relayer
     address private immutable LAYERZERO_ENDPOINT;
 
-    // Minimum bytes to decode: 20 (address) + 4 (selector) + 416 (ABI tuple uint256, SendParam, address)
-    // SendParam min = 320 (7-field head + 3 empty bytes tails), tuple head = 96 -> 96 + 320 = 416
-    uint256 private constant MIN_HOOK_DATA_LENGTH = 440;
+    // Minimum bytes to decode: 20 (address) + 4 (selector) + 448 (ABI tuple bytes32, uint256, SendParam, address)
+    // SendParam min = 320 (7-field head + 3 empty bytes tails), tuple head = 128 -> 128 + 320 = 448
+    uint256 private constant MIN_HOOK_DATA_LENGTH = 472;
 
     // Maximum fee basis points (100% = 10,000)
     uint256 private constant FEE_BASIS = 10_000;
@@ -104,6 +104,16 @@ contract NestCCTPRelayer is BaseCCTPRelayer, IOFT {
         __Auth_init_unchained(_owner, Authority(address(0)));
         __BaseCCTPRelayer_init();
     }
+
+    /// @notice Returns the version of the NestCCTPRelayer contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "1.0.0";
+    }
+
+    /// @notice Accept native-token refunds from the LayerZero endpoint.
+    receive() external payable {}
 
     /*//////////////////////////////////////////////////////////////
                             ADMIN FUNCTIONS
@@ -286,6 +296,37 @@ contract NestCCTPRelayer is BaseCCTPRelayer, IOFT {
         (,, _refundToAddress,,,) = _decodeNestHookData(hookData);
     }
 
+    /// @notice Execute the composer hook, spending the actual USDC received rather than the source-supplied amount.
+    /// @dev Overrides base execution to (1) deposit `_amountReceived` so CCTP fast-transfer fees leave no residual
+    ///      USDC on the relayer, and (2) force the LZ fee-refund address to this relayer (recoverable via
+    ///      recoverToken) instead of an attacker-controlled hook value.
+    /// @param _amountReceived uint256        The amount of USDC received alongside the message.
+    /// @param _message        bytes calldata The encoded CCTP message.
+    /// @param _data           bytes calldata PredicateMessage encoded data for the hook execution.
+    /// @param _extraOptions   bytes calldata Relayer-controlled options for downstream hook execution.
+    /// @return _success       bool          Whether the hook execution succeeded.
+    /// @return _returnData    bytes memory  The returned data from the hook execution.
+    function _executeHook(
+        uint256 _amountReceived,
+        bytes calldata _message,
+        bytes calldata _data,
+        bytes calldata _extraOptions
+    ) internal override returns (bool _success, bytes memory _returnData) {
+        bytes29 hookData = _getHookData(_message, _data, _extraOptions);
+
+        (bool invalid,) = _validateHookData(hookData, _amountReceived);
+        if (invalid) revert Errors.InvalidHookData();
+
+        // `_getHookData` rebuilds the hook with `depositor` in the first field and the injected sendParam.
+        (address target, bytes4 selector, bytes32 depositor,, SendParam memory sendParam,) =
+            _decodeNestHookData(hookData);
+
+        bytes memory hookCalldata =
+            abi.encodeWithSelector(selector, depositor, _amountReceived, sendParam, address(this));
+
+        (_success, _returnData) = target.call{value: msg.value}(hookCalldata);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -349,6 +390,16 @@ contract NestCCTPRelayer is BaseCCTPRelayer, IOFT {
     /// @notice Indicate that approvals are required for OFT sends.
     function approvalRequired() external pure returns (bool) {
         return true;
+    }
+
+    /// @notice Remote peer for a destination EID.
+    /// @dev Derived from CCTP's own remote-messenger registry.
+    /// @param _eid    uint32  The LayerZero endpoint id.
+    /// @return        bytes32 The remote peer identity, or bytes32(0) when the EID is unmapped.
+    function peers(uint32 _eid) external view returns (bytes32) {
+        uint32 _domain = _getNestCCTPRelayerStorage().eidToDomain[_eid];
+        if (_domain == 0) return bytes32(0);
+        return TOKEN_MESSENGER.remoteTokenMessengers(_domain);
     }
 
     /// @notice Return the shared decimals for OFT (USDC has 6).

@@ -10,9 +10,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SYBaseUpgV2} from "contracts/vendor/Pendle/SYBaseUpgV2.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {MerklRewardAbstract__NoStorage} from "contracts/vendor/Pendle/MerklRewardAbstract__NoStorage.sol";
-import {AccountantWithRateProviders} from "@boring-vault/src/base/Roles/AccountantWithRateProviders.sol";
+import {NestAccountant} from "contracts/accountant/NestAccountant.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
-import {BoringVaultSYStorage} from "contracts/BoringVaultSYStorage.sol";
 
 // types
 import {Errors} from "contracts/types/Errors.sol";
@@ -25,7 +24,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 /// @notice A specialized vault that integrates with Pendle and rate providers via an external accountant.
 /// @dev Inherits from Pendle SY base contracts, enabling yield-bearing asset management and Merkl reward distribution.
 ///      Reference : https://github.com/pendle-finance/Pendle-SY-Public/blob/21ccfee6c24936fb73c1ae78d1a87c83b05f105c/contracts/core/StandardizedYield/implementations/PendleERC4626NoRedeemNoDepositUpgSY.sol
-contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoStorage, BoringVaultSYStorage {
+contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoStorage {
     /// @notice The base asset associated with this vault (ERC20 token address)
     /// @dev Immutable; set once at deployment
     address public immutable asset;
@@ -34,12 +33,32 @@ contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoSto
     /// @dev This constant represents the smallest allowed rate
     uint256 public immutable MIN_RATE;
 
-    /// @notice The maximum rate allowed for certain calculations (e.g., fee rates)
-    /// @dev This constant prevents overflow by capping the rate at 1e30 in base units
-    uint256 public constant MAX_RATE = 1e30; // Example: prevent overflow
+    /// @notice The maximum rate allowed for exchange calculation
+    /// @dev Capped so `exchangeRate()` can never exceed `type(uint128).max`, which Pendle's
+    ///      `_pyIndexCurrent()` requires when storing the PY index. Depends on `ONE_SHARE`.
+    uint256 public immutable MAX_RATE;
 
     /// @dev Ensures consistent math when converting between shares and assets
     uint256 internal immutable ONE_SHARE;
+
+    /*//////////////////////////////////////////////////////////////
+                        ERC-7201 STORAGE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @custom:storage-location erc7201:plumenetwork.storage.BoringVaultSY
+    struct BoringVaultSYStorage {
+        NestAccountant accountant;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("plumenetwork.storage.BoringVaultSY")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant BoringVaultSYStorageLocation =
+        0xba3cecd4d64affe75cd39a3d4a8081a70ba26075a4ef33e74e52794a68cdc400;
+
+    function _getBoringVaultSYStorage() private pure returns (BoringVaultSYStorage storage $) {
+        assembly {
+            $.slot := BoringVaultSYStorageLocation
+        }
+    }
 
     /// @notice Constructs the PendleNestVault contract
     /// @param _erc4626 The ERC4626-compatible yield token (SYBase) to wrap
@@ -52,6 +71,8 @@ contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoSto
     {
         asset = _asset;
         ONE_SHARE = 10 ** IERC20Metadata(_erc4626).decimals();
+        // exchangeRate() = mulDiv(PMath.ONE, rate, ONE_SHARE); cap rate so it can never exceed uint128.
+        MAX_RATE = Math.mulDiv(type(uint128).max, ONE_SHARE, PMath.ONE, Math.Rounding.Floor);
         if (_minRate >= 10 ** IERC20Metadata(_asset).decimals()) {
             revert Errors.InvalidRate();
         }
@@ -60,35 +81,42 @@ contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoSto
 
     /// @notice Initializes the PendleNestVault after deployment
     /// @dev Should be called only once. Sets vault metadata and the rate accountant
-    /// @param _accountantWithRateProviders The address of accountant with rate providers
+    /// @param _accountant The address of the Nest accountant
     /// @param _name The vault token name
     /// @param _symbol The vault token symbol
     /// @param _owner The address with ownership privileges
-    function initialize(
-        address _accountantWithRateProviders,
-        string memory _name,
-        string memory _symbol,
-        address _owner
-    ) external virtual initializer {
-        _setAccountantWithRateProviders(_accountantWithRateProviders);
+    function initialize(address _accountant, string memory _name, string memory _symbol, address _owner)
+        external
+        virtual
+        initializer
+    {
+        _setAccountant(_accountant);
         __SYBaseUpgV2_init(_name, _symbol, _owner);
     }
 
-    /// @dev Shared accountant validation and assignment logic
-    function _setAccountantWithRateProviders(address _accountantWithRateProviders) internal {
-        if (_accountantWithRateProviders == address(0)) {
+    /// @notice Returns the version of the BoringVaultSY contract.
+    /// @dev    This version is used to track contract upgrades.
+    /// @return string A string representing the version of the contract.
+    function version() public pure returns (string memory) {
+        return "2.0.0";
+    }
+
+    /// @dev Shared accountant validation and assignment logic.
+    ///      Asserts the accountant's share token matches `yieldToken` and returns a sane rate for `asset`.
+    function _setAccountant(address _accountant) internal {
+        if (_accountant == address(0)) {
             revert Errors.ZeroAddress();
         }
 
-        AccountantWithRateProviders acc = AccountantWithRateProviders(_accountantWithRateProviders);
+        NestAccountant acc = NestAccountant(_accountant);
 
-        address v = address(acc.vault());
+        if (acc.share() != yieldToken) revert Errors.IncompatibleAccountant();
 
-        if (v != yieldToken) {
-            revert Errors.ShareTokenNotVaultShare(yieldToken, v);
-        }
+        uint256 rate = acc.getRateInQuoteSafe(ERC20(asset));
+        if (rate == 0) revert Errors.InvalidRate();
+        if (rate < MIN_RATE || rate > MAX_RATE) revert Errors.RateOutOfBounds();
 
-        accountantWithRateProviders = acc;
+        _getBoringVaultSYStorage().accountant = acc;
     }
 
     /// @dev Returns 1:1 shares for deposited amount since vault and token are equivalent.
@@ -173,6 +201,11 @@ contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoSto
         return amountSharesToRedeem;
     }
 
+    /// @notice Returns the accountant that provides the exchange rate for this SY
+    function accountant() external view returns (NestAccountant) {
+        return _getBoringVaultSYStorage().accountant;
+    }
+
     /// @notice Returns the list of valid input tokens for deposits.
     /// @dev Always returns the yield token.
     /// @return res Array containing only the yield token address.
@@ -216,7 +249,7 @@ contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoSto
 
     /// @dev Internal helper to validate rate from external oracle
     function _getValidatedRate() internal view returns (uint256 rate) {
-        rate = accountantWithRateProviders.getRateInQuoteSafe(ERC20(asset));
+        rate = _getBoringVaultSYStorage().accountant.getRateInQuoteSafe(ERC20(asset));
 
         // prevent division by zero
         if (rate == 0) revert Errors.InvalidRate();
@@ -233,10 +266,10 @@ contract BoringVaultSY is Initializable, SYBaseUpgV2, MerklRewardAbstract__NoSto
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Updates accountant with rate provider
-    /// @dev Only authorized entity can update rate provider
-    /// @param _accountantWithRateProviders rate provider address
-    function setAccountantWithRateProviders(address _accountantWithRateProviders) external onlyOwner {
-        _setAccountantWithRateProviders(_accountantWithRateProviders);
+    /// @notice Updates the accountant
+    /// @dev Only authorized entity can update the accountant
+    /// @param _accountant The new accountant address
+    function setAccountant(address _accountant) external onlyOwner {
+        _setAccountant(_accountant);
     }
 }

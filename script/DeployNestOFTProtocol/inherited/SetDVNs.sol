@@ -62,8 +62,8 @@ contract SetDVNs is BaseInherited, Script {
         // get the current DVN stack for the given oft and library
         bytes memory _currentUlnConfigBytes = IMessageLibManager(_srcConfig.endpoint)
             .getConfig({
-                _oapp: _oft, _lib: _lib, _eid: uint32(_dstConfig.eid), _configType: L0ConfigConstant.CONFIG_TYPE_ULN
-            });
+            _oapp: _oft, _lib: _lib, _eid: uint32(_dstConfig.eid), _configType: L0ConfigConstant.CONFIG_TYPE_ULN
+        });
         UlnConfig memory _currentUlnConfig = abi.decode(_currentUlnConfigBytes, (UlnConfig));
 
         // generate the DVN stack as defined in the config

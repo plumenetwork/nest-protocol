@@ -245,6 +245,7 @@ contract BundleCalldataLibTest is Test {
         Bundle memory bundle = _bundle();
         bundle.ma.repay = 30;
         bundle.ma.withdrawCollateral = 0; // zeroed by getSyncBundle
+        bundle.intent.mode = PositionMode.Delta; // set by getSyncBundle
 
         Call memory call = harness.morphoRepay(bundle);
 
@@ -253,6 +254,20 @@ contract BundleCalldataLibTest is Test {
 
         assertEq(repayAssets, 30, "sync-split should use asset-based repay");
         assertEq(repayShares, 0, "sync-split should not use shares");
+    }
+
+    function test_morphoRepay_fullRepayKeepCollateral_usesSharesMax() external view {
+        Bundle memory bundle = _bundle();
+        bundle.ma.repay = 50;
+        bundle.ma.withdrawCollateral = 0;
+
+        Call memory call = harness.morphoRepay(bundle);
+
+        (, uint256 repayAssets, uint256 repayShares,,,) =
+            abi.decode(_stripSelector(call.data), (MarketParams, uint256, uint256, uint256, address, bytes));
+
+        assertEq(repayAssets, 0, "keep-collateral full repay should zero repayAssets");
+        assertEq(repayShares, type(uint256).max, "keep-collateral full repay should use shares max");
     }
 
     function test_morphoRepay_asyncSplitFullExit_usesSharesMax() external view {
@@ -293,7 +308,7 @@ contract BundleCalldataLibTest is Test {
             maxRepaySharePriceE27: type(uint256).max,
             mode: PositionMode.Target,
             target: Position({loan: 0, collateral: 0}),
-            delta: MarketActions({borrow: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
+            delta: MarketActions({borrow: 0, flashRepay: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
         });
         bundle.route = RouteInput({legacyRedemption: false, legacyDeposit: false, instantRedeem: false});
         bundle.predicateMessage = _emptyPredicateMessage();

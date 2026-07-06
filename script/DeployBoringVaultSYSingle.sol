@@ -7,7 +7,7 @@ import {
     TransparentUpgradeableProxy,
     ITransparentUpgradeableProxy
 } from "script/vendor/@openzeppelin-4.9.6/proxy/transparent/TransparentUpgradeableProxy.sol";
-import {BoringVaultSY} from "contracts/BoringVaultSY.sol";
+import {BoringVaultSY} from "contracts/pendle/BoringVaultSY.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Constants} from "script/Constants.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";

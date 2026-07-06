@@ -19,6 +19,9 @@ library Errors {
     /// @dev Error thrown when the number of assets is zero
     error ZeroAssets();
 
+    /// @dev Error thrown when an amount is zero
+    error ZeroAmount();
+
     /// @dev Error thrown when a token name or symbol is empty
     error EmptyNameOrSymbol();
 
@@ -30,6 +33,9 @@ library Errors {
 
     /// @dev Error thrown when requested amount exceeds claimable amount
     error InsufficientClaimable();
+
+    /// @dev Error thrown when an update/cancel can't be honored because the shares were already fulfilled at the vault
+    error PendingAlreadyFulfilled(uint256 requested, uint256 available);
 
     /// @dev Error thrown when transfer amount is lower than expected
     error TransferInsufficient();
@@ -64,6 +70,9 @@ library Errors {
     /// @dev Error thrown when unauthorized user tries to perform transaction via predicate proxy
     error NestPredicateProxyPredicateUnauthorizedTransaction();
 
+    /// @dev Error thrown when a Permit2 transfer did not credit the proxy with the full deposit amount
+    error NestPredicateProxyInsufficientPermit2Transfer();
+
     /// @dev Error thrown when the new upper exchange-rate bound is set below the minimum allowed value
     error UpperBoundTooSmall();
 
@@ -93,6 +102,9 @@ library Errors {
 
     /// @dev Error thrown when an unrecognized redeem type is provided in compose payload
     error UnknownRedeemType();
+
+    /// @dev Error thrown when the receiver (SendParam.to) is empty/zero on a pair-keyed async redeem flow
+    error InvalidReceiver();
 
     /// @dev Error thrown when the share OFT is not a valid NestShare
     error ShareOFTNotNestShare(address shareOFT);

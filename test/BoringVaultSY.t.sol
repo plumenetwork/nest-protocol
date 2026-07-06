@@ -5,8 +5,10 @@ import {SYTest, IStandardizedYield} from "test/vendor/Pendle/SYTest_flatten.t.so
 import {Constants} from "script/Constants.sol";
 import {Options, DefenderOptions, TxOverrides} from "@openzeppelin/foundry-upgrades/src/Options.sol";
 import {Upgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
-import {BoringVaultSY} from "contracts/BoringVaultSY.sol";
+import {BoringVaultSY} from "contracts/pendle/BoringVaultSY.sol";
 import {NestVault} from "contracts/NestVault.sol";
+import {NestAccountant} from "contracts/accountant/NestAccountant.sol";
+import {Errors} from "contracts/types/Errors.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {FixedPointMathLib} from "@solmate/utils/FixedPointMathLib.sol";
 import {console} from "forge-std/console.sol";
@@ -21,6 +23,8 @@ contract TestBoringVaultSY is SYTest, Constants {
     /// @dev Constant address of Ethereum USDC whale for testing
     address public constant ETHEREUM_USDC_WHALE = 0x37305B1cD40574E4C5Ce33f8e8306Be057fD7341;
     address public constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    /// @dev Live NestAccountant for nALPHA (exposes share() == NALPHA)
+    address public constant NALPHA_NEST_ACCOUNTANT = 0xFBf12AD3A117379ec8D9Ef449E6B7827337dFF1a;
 
     NestVault public nestVault;
 
@@ -54,7 +58,10 @@ contract TestBoringVaultSY is SYTest, Constants {
                 metadata: ""
             })
         });
-        address _accountantWithRateProviders = NALPHA_ACCOUNTANT;
+        // Use the live NestAccountant for nALPHA (share() == NALPHA) so BoringVaultSY's
+        // share-identity guard accepts it; the older NALPHA_ACCOUNTANT is a legacy
+        // AccountantWithRateProviders that does not expose share().
+        address _accountantWithRateProviders = NALPHA_NEST_ACCOUNTANT;
         address _asset = USDC;
         address _owner = address(this);
         uint256 _minRate = 1e3;
@@ -75,7 +82,9 @@ contract TestBoringVaultSY is SYTest, Constants {
             deployTransparentProxy(
                 logic,
                 deployer,
-                abi.encodeCall(BoringVaultSY.initialize, (NALPHA_ACCOUNTANT, "SY Nest ALPHA", "SY-nALPHA", deployer))
+                abi.encodeCall(
+                    BoringVaultSY.initialize, (_accountantWithRateProviders, "SY Nest ALPHA", "SY-nALPHA", deployer)
+                )
             )
         );
 
@@ -95,6 +104,17 @@ contract TestBoringVaultSY is SYTest, Constants {
         vm.startPrank(boringAuthority.owner());
         boringAuthority.setPublicCapability(address(nestVault), nestVault.mint.selector, true);
         boringAuthority.setPublicCapability(NALPHA, BoringVault.enter.selector, true);
+    }
+
+    /// @notice NEST-48: _setAccountant must reject an accountant whose share() != yieldToken.
+    function test_setAccountant_rejectsMismatchedShare() public {
+        address logic = address(new BoringVaultSY(NALPHA, deployer, USDC, 1e3));
+        // accountant reports an unrelated share token -> guard must revert
+        vm.mockCall(NALPHA_NEST_ACCOUNTANT, abi.encodeWithSelector(NestAccountant.share.selector), abi.encode(USDC));
+        vm.expectRevert(Errors.IncompatibleAccountant.selector);
+        deployTransparentProxy(
+            logic, deployer, abi.encodeCall(BoringVaultSY.initialize, (NALPHA_NEST_ACCOUNTANT, "SY", "SY", deployer))
+        );
     }
 
     function hasFee() internal pure override returns (bool) {

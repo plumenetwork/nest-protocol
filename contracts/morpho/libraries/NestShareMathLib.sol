@@ -8,6 +8,15 @@ import {NestVaultLib} from "./NestVaultLib.sol";
 /// @title NestShareMathLib
 /// @notice Minimal share/asset conversion helpers using a vault accountant rate.
 library NestShareMathLib {
+    /// @notice Funding pad (bps) on `shares = max` full repays, covering interest accrued between
+    ///         calldata build and execution; the unused surplus sweeps back to the owner.
+    uint256 internal constant FULL_REPAY_BUFFER_BPS = 10;
+
+    /// @notice Returns `amount` padded by `FULL_REPAY_BUFFER_BPS`.
+    function applyBuffer(uint256 amount) internal pure returns (uint256) {
+        return amount + Math.mulDiv(amount, FULL_REPAY_BUFFER_BPS, 10_000, Math.Rounding.Ceil);
+    }
+
     /// @notice Converts vault shares to assets using the vault's live accountant rate.
     /// @param shares Amount of shares to convert.
     /// @param vault Vault used to fetch `rate` and `oneShare`.

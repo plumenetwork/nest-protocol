@@ -1,0 +1,103 @@
+{
+  "symbol": "nREAH2",
+  "name": "Nest Reah Opportunistic Yield Vault",
+  "baseAssetSymbol": "USDC",
+  "vaultType": "NestVault",
+  "accountantType": "NestHubAccountant",
+
+  "contracts": {
+    "share": "0xFdD81472Afe0a4dCd240388C425F1d8627414a43",
+    "accountant": "0x3EC004a2917d8b601245D82d732aeAa3Fc26B35A",
+    "rolesAuthority": "0xB03E59FB4B11E21EbB105615431B11d947bB67df",
+    "vaults": [
+      {
+        "address": "0xAC9f1936fF0Cb85bAcAb17bb8E8AdEF47cF1ea83",
+        "assetSymbol": "USDC",
+        "chains": [1, 98866],
+        "composer": "0x7F5661eDd82345641C5E807B675CC78dF54F6249",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      },
+      {
+        "address": "0x23A3b0436e0461ACbFC746Ef677dC29239Ec0BBf",
+        "assetSymbol": "USDT",
+        "chains": [1],
+        "composer": "0x0000000000000000000000000000000000000000",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      },
+      {
+        "address": "0x7885CA63d98c4F87CDD164F0567734F0Ee282b6D",
+        "assetSymbol": "pUSD",
+        "chains": [98866],
+        "composer": "0x0000000000000000000000000000000000000000",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      }
+    ]
+  },
+
+  "common": {
+    "predicateProxy": "0xfC0c4222B3A0c9B060C0B959DEc62442036b9035",
+    "operatorRegistry": "0xFAbD98aEe7F100ff31632B5d8124488a39a26835",
+    "redeemOperator": "0xD9B432376cB18c99716865e540bb32c67d795440",
+    "cctpRelayer": "0x7de01896d36Bea9CF072Ac64E41685418941d8bE",
+    "seizer": "0xf6c00a6ac137680a5e9ecc7ab342df2c4d190510",
+    "blacklistHook": "0x7bc28c4085933bC3fc84DDBebE1C4009DdDE96F4",
+    "commonRolesAuthority": "0x93786916e1EE5913A45662a5986559f5785a5BA4"
+  },
+
+  "commonOverrides": {
+    "nestAdapter": "0x0000000000000000000000000000000000000000",
+    "nestUnlooper": "0x0000000000000000000000000000000000000000"
+  },
+
+  "accountantParams": {
+    "totalSharesLastUpdate": 0,
+    "payoutAddress": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "startingExchangeRate": 1000000,
+    "allowedExchangeRateChangeUpper": 1001000,
+    "allowedExchangeRateChangeLower": 999000,
+    "minimumUpdateDelayInSeconds": 3600,
+    "managementFee": 0,
+    "performanceFee": 0
+  },
+
+  "vaultFees": {
+    "deposit":           { "rate": 0, "flat": 0 },
+    "redemption":        { "rate": 0, "flat": 0 },
+    "instantRedemption": { "rate": 1500,   "flat": 0}
+  },
+
+  "vaultParams": {
+    "minRate": 1
+  },
+
+  "predicateParams": {
+    "policyID": "x-nest-prod-006"
+  },
+
+  "composerParams": {
+    "maxRetryableValue": 10000000000000000000
+  },
+
+  "roles": {
+    "owner": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "KEEPER_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
+    ],
+    "UPDATE_EXCHANGE_RATE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "MANAGER_ROLE": [
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "CAN_SOLVE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ]
+  },
+
+  "peers": [98866, 1]
+}

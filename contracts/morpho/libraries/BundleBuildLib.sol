@@ -100,6 +100,17 @@ library BundleBuildLib {
                 collateral: currentCollateral + ma.supplyCollateral - ma.withdrawCollateral
             });
             validatePosition(target, intent.market);
+            // Normalize a Delta full repay into Target so it clears via `shares = max`; an assets-based
+            // repay can round up to more shares than the position holds and revert.
+            if (target.loan == 0 && ma.repay > 0) {
+                intent.mode = PositionMode.Target;
+                intent.target = target;
+            }
+        }
+
+        // Buffer the repay for interest accrued between build and execution so `shares = max` survives accrual.
+        if (intent.mode == PositionMode.Target && intent.target.loan == 0 && ma.repay > 0) {
+            ma.flashRepay = ma.repay.applyBuffer();
         }
 
         validateMarketActions(ma);
@@ -122,8 +133,8 @@ library BundleBuildLib {
         view
         returns (uint256 requiredLoanAssets, uint256 requiredDepositLoanAssets, uint256 requiredRepayLoanAssets)
     {
-        // Required loan assets are those needed to repay debt and deposit assets into the vault.
-        requiredLoanAssets = ma.repay + va.deposit;
+        // Flash-loan sizing uses the buffered repay so execution has headroom for interest accrued before it runs.
+        requiredLoanAssets = ma.flashRepay + va.deposit;
 
         if (ma.repay == 0) {
             // No redeem leg: borrow is the only endogenous loan-asset source.
@@ -143,8 +154,12 @@ library BundleBuildLib {
             (withdrawCollateralLoanAssets,) = ctx.vault.previewFulfillRedeem(ma.withdrawCollateral);
         }
 
-        uint256 redeemForRepay = Math.min(withdrawCollateralLoanAssets, ma.repay);
-        requiredRepayLoanAssets = ma.repay - redeemForRepay;
+        // Funding base: withdrawing exits fund the un-buffered debt (`ma.repay`) and flash-borrow the buffer
+        // surplus; keep-collateral exits have no flash loan, so the owner funds the buffered repay (`ma.flashRepay`)
+        // and the surplus sweeps back.
+        uint256 repayFunding = ma.withdrawCollateral == 0 ? ma.flashRepay : ma.repay;
+        uint256 redeemForRepay = Math.min(withdrawCollateralLoanAssets, repayFunding);
+        requiredRepayLoanAssets = repayFunding - redeemForRepay;
 
         uint256 redeemRemainder = withdrawCollateralLoanAssets - redeemForRepay;
         requiredDepositLoanAssets = va.deposit.saturatingSub(redeemRemainder);
@@ -279,6 +294,9 @@ library BundleBuildLib {
         bundle.intent = intent;
         bundle.route = route;
 
+        // Full exits clear debt via `shares = max`; the +buffer lives on `ma.flashRepay`, `ma.repay` stays real debt.
+        bool fullExit = intent.mode == PositionMode.Target && intent.target.loan == 0 && ma.repay > 0;
+
         VaultActions memory va;
         uint256 ownerShareBalance = ctx.vault.getShareBalance(ctx.owner);
         uint256 maxPullShares = Math.min(ownerShareBalance, ma.supplyCollateral);
@@ -330,15 +348,18 @@ library BundleBuildLib {
             va.redeem = 0;
         } else if (route.legacyRedemption) {
             va.redeem = flashLoanAssets.convertToShares(ctx.vault, Math.Rounding.Ceil);
+            va.redeem = _capFullExitRedeem(fullExit, va.redeem, ma.withdrawCollateral);
         } else if (route.instantRedeem) {
             va.redeem = ctx.vault.getMinRedeemShares(flashLoanAssets, NestVaultCoreTypes.Fees.InstantRedemption);
+            va.redeem = _capFullExitRedeem(fullExit, va.redeem, ma.withdrawCollateral);
 
             uint256 instantRedeemLiquidity = ctx.vault.getInstantRedeemLiquidity();
             if (va.redeem > instantRedeemLiquidity) {
-                revert NestBundleErrors.InsufficientInstantRedeemLiquidity(va.redeem, instantRedeemLiquidity);
+                revert NestBundleErrors.InsufficientRedeemLiquidity(va.redeem, instantRedeemLiquidity);
             }
         } else {
             va.redeem = ctx.vault.getMinRedeemShares(flashLoanAssets, NestVaultCoreTypes.Fees.Redemption);
+            va.redeem = _capFullExitRedeem(fullExit, va.redeem, ma.withdrawCollateral);
 
             // Reject bundles where the flat fee exceeds FEE_CAP (20%) of the gross assets the redeem would produce.
             (, uint256 flatFee) = ctx.vault.fees(NestVaultCoreTypes.Fees.Redemption);
@@ -354,6 +375,8 @@ library BundleBuildLib {
             }
         }
 
+        // Partial exits cannot redeem more shares than they withdraw; full exits are capped above (redeem all,
+        // let `shares = max` clear the debt) so this only guards the partial-deleverage path.
         if (va.redeem > 0 && va.redeem > ma.withdrawCollateral) {
             revert NestBundleErrors.InsufficientCollateralForRedeem(va.redeem, ma.withdrawCollateral);
         }
@@ -380,6 +403,7 @@ library BundleBuildLib {
     {
         ma.borrow = target.loan.saturatingSub(currentBorrow);
         ma.repay = currentBorrow.saturatingSub(target.loan);
+        ma.flashRepay = ma.repay; // default: flash sizing == real repay (buffer applied later on full exits)
         ma.supplyCollateral = target.collateral.saturatingSub(currentCollateral);
         ma.withdrawCollateral = currentCollateral.saturatingSub(target.collateral);
     }
@@ -398,6 +422,7 @@ library BundleBuildLib {
         }
 
         ma = delta;
+        ma.flashRepay = ma.repay; // default: flash sizing == real repay (buffer applied later on full exits)
     }
 
     /// @dev Legacy AtomicQueue unloops only need current-position caps; they intentionally skip post-withdraw LTV checks.
@@ -439,7 +464,10 @@ library BundleBuildLib {
         syncBundle = abi.decode(abi.encode(bundle), (Bundle));
         syncBundle.va.redeem = 0;
         syncBundle.ma.repay = pullAssetsForRepay;
+        syncBundle.ma.flashRepay = pullAssetsForRepay; // sync leg is a direct owner-funded repay: no buffer
         syncBundle.ma.withdrawCollateral = 0;
+        // Sync leg is a partial repay; Delta mode keeps `morphoRepay` assets-based (see `_isFullExit`).
+        syncBundle.intent.mode = PositionMode.Delta;
 
         if (!hasActions(syncBundle)) return _emptyBundle();
     }
@@ -460,9 +488,23 @@ library BundleBuildLib {
         asyncBundle.ma.borrow = 0;
         asyncBundle.ma.supplyCollateral = 0;
         asyncBundle.ma.repay = asyncBundle.ma.repay - pullAssetsForRepay;
+        asyncBundle.ma.flashRepay = asyncBundle.ma.flashRepay - pullAssetsForRepay; // async leg flash-borrows; keep buffer
         asyncBundle.ma.withdrawCollateral = bundle.ma.withdrawCollateral;
 
         if (!hasActions(asyncBundle)) return _emptyBundle();
+    }
+
+    /// @dev On a full exit the redeem buffer (sized to the buffered flash loan) can exceed the collateral being
+    ///      withdrawn in a thin position. Cap it at the withdrawn collateral instead of reverting: `shares = max`
+    ///      clears the real debt and the buffer surplus is flash-borrowed then returned, so redeeming all of the
+    ///      withdrawn collateral is sufficient and any leftover sweeps to the owner as equity.
+    function _capFullExitRedeem(bool fullExit, uint256 redeem, uint256 withdrawCollateral)
+        private
+        pure
+        returns (uint256)
+    {
+        if (fullExit && redeem > withdrawCollateral) return withdrawCollateral;
+        return redeem;
     }
 
     /// @dev Returns a default-initialized empty bundle.

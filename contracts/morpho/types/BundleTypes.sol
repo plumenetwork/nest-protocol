@@ -9,8 +9,10 @@ import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 struct MarketActions {
     /// @notice Loan-asset amount to borrow from Morpho.
     uint256 borrow;
-    /// @notice Loan-asset amount to repay into Morpho.
+    /// @notice Loan-asset amount to repay into Morpho (the real debt).
     uint256 repay;
+    /// @notice Repay amount used for flash-loan sizing; on full exits, it carries the +interest buffer (see `applyBuffer`)
+    uint256 flashRepay;
     /// @notice Collateral shares to supply to Morpho.
     uint256 supplyCollateral;
     /// @notice Collateral shares to withdraw from Morpho.
