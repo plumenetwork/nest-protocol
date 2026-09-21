@@ -7,10 +7,11 @@ import {Call} from "contracts/vendor/bundler3/interfaces/IBundler3.sol";
 import {IMorpho, MarketParams} from "@morpho/interfaces/IMorpho.sol";
 import {PredicateMessage} from "@predicate/src/interfaces/IPredicateClient.sol";
 import {GeneralAdapter1} from "contracts/vendor/morpho/GeneralAdapter1.sol";
-import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
-import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {MorphoAdapter} from "contracts/integrations/morpho/MorphoAdapter.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
 
 import {
     Bundle,
@@ -20,8 +21,8 @@ import {
     RouteInput,
     Position,
     UserIntent
-} from "contracts/morpho/types/BundleTypes.sol";
-import {BundleCalldataLib} from "contracts/morpho/libraries/BundleCalldataLib.sol";
+} from "contracts/integrations/morpho/types/BundleTypes.sol";
+import {BundleCalldataLib} from "contracts/integrations/morpho/libraries/BundleCalldataLib.sol";
 
 contract NestBundleCalldataHarness {
     function getBundleCalls(Bundle memory bundle) external view returns (Call[] memory calls) {
@@ -50,7 +51,7 @@ contract BundleCalldataLibTest is Test {
     address internal constant BUNDLER = address(0x2002);
     address internal constant VAULT = address(0x2003);
     address internal constant TELLER = address(0x2004);
-    address internal constant PREDICATE_PROXY = address(0x2005);
+    address internal constant COMPLIANCE_PROXY = address(0x2005);
     address internal constant ATOMIC_SOLVER = address(0x2006);
     address internal constant ATOMIC_QUEUE = address(0x2007);
 
@@ -87,7 +88,7 @@ contract BundleCalldataLibTest is Test {
         assertEq(_selector(calls[1].data), GeneralAdapter1.erc20TransferFrom.selector);
         assertEq(_selector(calls[2].data), GeneralAdapter1.morphoRepay.selector);
         assertEq(_selector(calls[3].data), MorphoAdapter.morphoWithdrawCollateralOnBehalf.selector);
-        assertEq(_selector(calls[4].data), NestAdapter.nestPredicateMint.selector);
+        assertEq(_selector(calls[4].data), NestAdapter.nestComplianceMint.selector);
         assertEq(_selector(calls[5].data), GeneralAdapter1.morphoSupplyCollateral.selector);
         assertEq(_selector(calls[6].data), MorphoAdapter.morphoBorrowOnBehalf.selector);
         assertEq(_selector(calls[7].data), NestAdapter.nestRequestAndRedeem.selector);
@@ -112,7 +113,7 @@ contract BundleCalldataLibTest is Test {
 
         Call[] memory callbackBundle = abi.decode(callbackData, (Call[]));
         assertEq(callbackBundle.length, 2);
-        assertEq(_selector(callbackBundle[0].data), NestAdapter.nestPredicateMint.selector);
+        assertEq(_selector(callbackBundle[0].data), NestAdapter.nestComplianceMint.selector);
         assertEq(_selector(callbackBundle[1].data), MorphoAdapter.morphoBorrowOnBehalf.selector);
     }
 
@@ -120,11 +121,22 @@ contract BundleCalldataLibTest is Test {
         Bundle memory bundle = _bundle();
 
         Call memory modernRoute = harness.nestDeposit(bundle);
-        assertEq(_selector(modernRoute.data), NestAdapter.nestPredicateMint.selector);
+        assertEq(_selector(modernRoute.data), NestAdapter.nestComplianceMint.selector);
 
         bundle.route.legacyDeposit = true;
         Call memory legacyRoute = harness.nestDeposit(bundle);
         assertEq(_selector(legacyRoute.data), NestAdapter.tellerPredicateDeposit.selector);
+    }
+
+    function test_nestDeposit_modernRouteBindsOwnerAsOnBehalf() external view {
+        Bundle memory bundle = _bundle();
+        bundle.ctx.initiator = ALT_INITIATOR;
+
+        Call memory modernRoute = harness.nestDeposit(bundle);
+        (,,,,, bytes32 onBehalf,) =
+            abi.decode(_stripSelector(modernRoute.data), (address, address, uint256, uint256, address, bytes32, bytes));
+
+        assertEq(onBehalf, bytes32(uint256(uint160(OWNER))));
     }
 
     function test_nestDeposit_legacyFractionalRate_usesPlannedMintForMinimumMint() external view {
@@ -149,7 +161,7 @@ contract BundleCalldataLibTest is Test {
         uint256 doubleRoundedMinimumMint =
             Math.mulDiv(bundle.va.deposit, 1e27, bundle.intent.maxSharePriceE27, Math.Rounding.Ceil);
 
-        assertEq(predicateProxy, PREDICATE_PROXY);
+        assertEq(predicateProxy, COMPLIANCE_PROXY);
         assertEq(asset, bundle.intent.market.loanToken);
         assertEq(assets, 5);
         assertEq(doubleRoundedMinimumMint, 4, "fractional legacy route previously double-rounded to D + 1");
@@ -222,9 +234,45 @@ contract BundleCalldataLibTest is Test {
         Call memory legacyRoute = harness.nestRedeem(bundle);
         assertEq(_selector(legacyRoute.data), NestAdapter.atomicSolverRedeemSolve.selector);
 
+        bundle.route.legacyRedemption = false;
         bundle.route.instantRedeem = true;
         Call memory instantRoute = harness.nestRedeem(bundle);
         assertEq(_selector(instantRoute.data), NestAdapter.nestInstantRedeem.selector);
+    }
+
+    function test_nestRedeem_routesCompliantInstantAndAsyncWithBundleOwner() external {
+        Bundle memory bundle = _bundle();
+        bundle.va.redeem = 1;
+        bundle.ctx.initiator = ALT_INITIATOR;
+        bundle.route.compliantRedemption = true;
+
+        Call memory asyncRoute = harness.nestRedeem(bundle);
+        assertEq(_selector(asyncRoute.data), NestAdapter.nestComplianceRequestAndRedeem.selector);
+        (,,,,,, address asyncShareOwner, bytes32 asyncOnBehalf,) = abi.decode(
+            _stripSelector(asyncRoute.data),
+            (address, address, uint256, uint256, address, address, address, bytes32, bytes)
+        );
+        assertEq(asyncShareOwner, ADAPTER);
+        assertEq(asyncOnBehalf, bytes32(uint256(uint160(OWNER))));
+
+        bundle.route.instantRedeem = true;
+        Call memory instantRoute = harness.nestRedeem(bundle);
+        assertEq(_selector(instantRoute.data), NestAdapter.nestComplianceInstantRedeem.selector);
+        (,,,,, address instantShareOwner, bytes32 instantOnBehalf,) = abi.decode(
+            _stripSelector(instantRoute.data), (address, address, uint256, uint256, address, address, bytes32, bytes)
+        );
+        assertEq(instantShareOwner, ADAPTER);
+        assertEq(instantOnBehalf, bytes32(uint256(uint160(OWNER))));
+    }
+
+    function test_nestRedeem_revertsWhenLegacyAndComplianceAreEnabled() external {
+        Bundle memory bundle = _bundle();
+        bundle.va.redeem = 1;
+        bundle.route.legacyRedemption = true;
+        bundle.route.compliantRedemption = true;
+
+        vm.expectRevert(NestBundleErrors.LegacyRedemptionCannotUseCompliance.selector);
+        harness.nestRedeem(bundle);
     }
 
     function test_morphoRepay_fullExitUnsplit_usesSharesMax() external view {
@@ -291,7 +339,7 @@ contract BundleCalldataLibTest is Test {
             adapter: ADAPTER,
             bundler: BUNDLER,
             teller: TELLER,
-            predicateProxy: PREDICATE_PROXY,
+            complianceProxy: COMPLIANCE_PROXY,
             atomicSolver: ATOMIC_SOLVER,
             atomicQueue: ATOMIC_QUEUE,
             owner: OWNER,
@@ -310,8 +358,10 @@ contract BundleCalldataLibTest is Test {
             target: Position({loan: 0, collateral: 0}),
             delta: MarketActions({borrow: 0, flashRepay: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
         });
-        bundle.route = RouteInput({legacyRedemption: false, legacyDeposit: false, instantRedeem: false});
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.route = RouteInput({
+            legacyRedemption: false, legacyDeposit: false, instantRedeem: false, compliantRedemption: false
+        });
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
     }
 
     function _market() internal pure returns (MarketParams memory market) {

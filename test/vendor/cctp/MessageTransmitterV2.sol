@@ -17,12 +17,12 @@
  */
 pragma solidity ^0.8.30;
 
-import {IMessageTransmitterV2} from "contracts/interfaces/vendor/cctp/IMessageTransmitterV2.sol";
+import {IMessageTransmitterV2} from "contracts/vendor/cctp/interfaces/IMessageTransmitterV2.sol";
 import {BaseMessageTransmitter} from "./BaseMessageTransmitter.sol";
 import {MessageV2} from "./messages/v2/MessageV2.sol";
 import {AddressUtils} from "./messages/v2/AddressUtils.sol";
-import {TypedMemView} from "contracts/libraries/vendor/cctp/TypedMemView.sol";
-import {IMessageHandlerV2} from "contracts/interfaces/vendor/cctp/IMessageHandlerV2.sol";
+import {TypedMemView} from "contracts/vendor/cctp/libraries/TypedMemView.sol";
+import {IMessageHandlerV2} from "contracts/vendor/cctp/interfaces/IMessageHandlerV2.sol";
 import {FINALITY_THRESHOLD_FINALIZED} from "./FinalityThresholds.sol";
 import "forge-std/console2.sol";
 

@@ -15,10 +15,10 @@
  */
 pragma solidity ^0.8.30;
 
-import "contracts/interfaces/vendor/cctp/IMessageHandler.sol";
-import "contracts/interfaces/vendor/cctp/ITokenMinter.sol";
-import "contracts/interfaces/vendor/cctp/IMintBurnToken.sol";
-import "contracts/interfaces/vendor/cctp/IMessageTransmitter.sol";
+import "contracts/vendor/cctp/interfaces/IMessageHandler.sol";
+import "contracts/vendor/cctp/interfaces/ITokenMinter.sol";
+import "contracts/vendor/cctp/interfaces/IMintBurnToken.sol";
+import "contracts/vendor/cctp/interfaces/IMessageTransmitter.sol";
 import "./messages/BurnMessage.sol";
 import "./messages/Message.sol";
 import "./roles/Rescuable.sol";

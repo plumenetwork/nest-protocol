@@ -1,0 +1,11 @@
+{
+  "chainId": 42161,
+  "v1": {
+    "serviceManager": "0x0000000000000000000000000000000000000000",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "arbitrum",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  }
+}

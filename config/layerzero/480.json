@@ -36,6 +36,11 @@
       "lz": "0x6788f52439aca6bff597d3eec2dc9a44b8fee842",
       "nethermind": "0xdd7b5e1db4aafd5c8ec3b764efb8ed265aa5445b",
       "canary":  "0xe9c24dd582e37faaca7d44c799530688de92da73"
+    },
+    "8453": {
+      "lz": "0x6788f52439aca6bff597d3eec2dc9a44b8fee842",
+      "nethermind": "0xdd7b5e1db4aafd5c8ec3b764efb8ed265aa5445b",
+      "canary": "0xe9c24dd582e37faaca7d44c799530688de92da73"
     }
   },
   "enforcedOptions": {

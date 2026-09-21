@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 // contracts
 import {OFTUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
@@ -130,7 +130,7 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
     /// @dev    This version is used to track contract upgrades.
     /// @return string A string representing the version of the contract.
     function version() public pure returns (string memory) {
-        return "1.1.0";
+        return "1.2.0";
     }
 
     /// @notice Returns the NestVault address associated with a given asset.
@@ -177,6 +177,7 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
     /// @return result bytes   The raw returned data from the call
     function manage(address target, bytes calldata data, uint256 value)
         external
+        payable
         requiresAuth
         returns (bytes memory result)
     {
@@ -191,6 +192,7 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
     /// @return results bytes[]   The returned data for each call
     function manage(address[] calldata targets, bytes[] calldata data, uint256[] calldata values)
         external
+        payable
         requiresAuth
         returns (bytes[] memory results)
     {
@@ -200,6 +202,9 @@ contract NestShareOFT is OFTUpgradeable, AuthUpgradeable, IERC7575Share, ERC20Pe
             results[i] = targets[i].functionCallWithValue(data[i], values[i]);
         }
     }
+
+    /// @notice Allows the contract to receive native ETH for calls made through `manage`.
+    receive() external payable {}
 
     /// @notice Mints shares in exchange for depositing assets
     /// @dev    Callable by authorized roles (MINTER_ROLE)

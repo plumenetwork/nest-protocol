@@ -7,7 +7,7 @@ import {NestShareOFT} from "contracts/NestShareOFT.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {ITransferHook} from "contracts/interfaces/ITransferHook.sol";
 

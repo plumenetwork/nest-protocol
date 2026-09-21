@@ -5,7 +5,7 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 
 // contract
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {MockAuthChild} from "test/mock/MockAuthChild.sol";
 import {MockAuthority} from "test/mock/MockAuthority.sol";
 import {Authority} from "@solmate/auth/Auth.sol";

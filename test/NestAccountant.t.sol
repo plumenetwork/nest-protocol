@@ -12,7 +12,7 @@ import {Constants} from "test/Constants.sol";
 import {MockNestAccountant, NestHubAccountant} from "test/mock/MockNestAccountant.sol";
 import {NestAccountant} from "contracts/accountant/NestAccountant.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 // interfaces
@@ -162,6 +162,12 @@ contract NestAccountantForkTest is Constants, Test {
             3600,
             "minimumUpdateDelayInSeconds mismatch"
         );
+    }
+
+    function test_version() public {
+        NestAccountant accountant = new NestAccountant(address(USDC), NALPHA);
+
+        assertEq(accountant.version(), "1.1.1");
     }
 
     function test_constructor_disablesInitializers() public {
@@ -379,19 +385,24 @@ contract NestAccountantForkTest is Constants, Test {
         vm.expectEmit();
         emit NestHubAccountant.ManagementFeeUpdated(initialFee, newFee);
 
-        NEST_ACCOUNTANT.updateManagementFee(newFee, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(newFee);
 
         NestHubAccountant.AccountantState memory updatedState = NEST_ACCOUNTANT.getAccountantState();
         assertEq(updatedState.managementFee, newFee);
     }
 
-    function test_updateManagementFee_revertsBeforeMinimumDelayWhenTimeElapsed() public {
-        NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
-        uint128 supply = uint128(IERC20(NALPHA).totalSupply());
-        vm.warp(uint256(state.lastUpdateTimestamp) + state.minimumUpdateDelayInSeconds - 1);
+    function test_updateManagementFee_succeedsBeforeMinimumDelayAndForwardsTimestamp() public {
+        NestHubAccountant.AccountantState memory before = NEST_ACCOUNTANT.getAccountantState();
+        uint64 updateTime = before.lastUpdateTimestamp + before.minimumUpdateDelayInSeconds - 1;
+        vm.warp(updateTime);
 
-        vm.expectRevert(Errors.MinimumUpdateDelayNotPassed.selector);
-        NEST_ACCOUNTANT.updateManagementFee(20_000, supply);
+        NEST_ACCOUNTANT.updateManagementFee(20_000);
+
+        NestHubAccountant.AccountantState memory afterUpdate = NEST_ACCOUNTANT.getAccountantState();
+        assertEq(afterUpdate.lastUpdateTimestamp, updateTime, "timestamp should advance without enforcing delay");
+        assertEq(afterUpdate.exchangeRate, before.exchangeRate, "fee update should not move rate");
+        assertEq(afterUpdate.feesOwedInBase, before.feesOwedInBase, "fee update should not accrue fees");
+        assertEq(afterUpdate.totalSharesLastUpdate, before.totalSharesLastUpdate, "fee update should not change supply");
     }
 
     function test_updateManagementFee_succeedsAfterRateUpdateInSameTimestamp() public {
@@ -401,7 +412,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateExchangeRate(state.exchangeRate, supply);
 
         NestHubAccountant.AccountantState memory afterRateUpdate = NEST_ACCOUNTANT.getAccountantState();
-        NEST_ACCOUNTANT.updateManagementFee(20_000, supply);
+        NEST_ACCOUNTANT.updateManagementFee(20_000);
 
         NestHubAccountant.AccountantState memory afterFeeUpdate = NEST_ACCOUNTANT.getAccountantState();
         assertEq(afterFeeUpdate.managementFee, 20_000, "management fee should update");
@@ -413,9 +424,67 @@ contract NestAccountantForkTest is Constants, Test {
         );
     }
 
-    /// @dev Ensures updateManagementFee accrues old-fee fees and then the new fee applies from the next updateExchangeRate
-    function test_updateManagementFee_newFeeAppliesFromNextUpdate() public {
-        // Deploy accountant with wider bounds — this test exercises fee accrual, not bounds checking
+    function test_updateManagementFee_preservesGlobalSupplyCheckpointAtFreshnessLimit() public {
+        NEST_ACCOUNTANT.updateUpper(1_100_000);
+        NEST_ACCOUNTANT.updateLower(900_000);
+
+        uint128 localSupply = uint128(IERC20(NALPHA).totalSupply());
+        uint128 globalSupply = localSupply * 2;
+        NestHubAccountant.AccountantState memory initialState = NEST_ACCOUNTANT.getAccountantState();
+
+        vm.warp(uint256(initialState.lastUpdateTimestamp) + initialState.minimumUpdateDelayInSeconds + 1);
+        NEST_ACCOUNTANT.updateExchangeRate(initialState.exchangeRate, globalSupply);
+
+        NestHubAccountant.AccountantState memory afterRateUpdate = NEST_ACCOUNTANT.getAccountantState();
+        uint256 carryAfterRateUpdate = NEST_ACCOUNTANT.managementFeeCarryForTesting();
+        uint64 updateTime = afterRateUpdate.lastUpdateTimestamp + 14 days;
+        vm.warp(updateTime);
+        NEST_ACCOUNTANT.updateManagementFee(20_000);
+
+        NestHubAccountant.AccountantState memory afterFeeUpdate = NEST_ACCOUNTANT.getAccountantState();
+        assertEq(afterFeeUpdate.lastUpdateTimestamp, updateTime, "elapsed interval should be checkpointed");
+        assertEq(afterFeeUpdate.exchangeRate, afterRateUpdate.exchangeRate, "forfeited fees should not move rate");
+        assertEq(afterFeeUpdate.feesOwedInBase, afterRateUpdate.feesOwedInBase, "forfeited fees should not be booked");
+        assertEq(
+            NEST_ACCOUNTANT.managementFeeCarryForTesting(),
+            carryAfterRateUpdate,
+            "fee update should not accrue into carry"
+        );
+        assertEq(afterFeeUpdate.totalSharesLastUpdate, globalSupply, "global supply checkpoint should be preserved");
+    }
+
+    function test_updateManagementFee_revertsWhenRateCheckpointIsStale() public {
+        NestHubAccountant.AccountantState memory before = NEST_ACCOUNTANT.getAccountantState();
+        vm.warp(uint256(before.lastUpdateTimestamp) + 14 days + 1);
+
+        vm.expectRevert(Errors.UpdateDelayTooLarge.selector);
+        NEST_ACCOUNTANT.updateManagementFee(20_000);
+
+        NestHubAccountant.AccountantState memory afterRevert = NEST_ACCOUNTANT.getAccountantState();
+        assertEq(afterRevert.managementFee, before.managementFee, "fee should not change on stale checkpoint");
+        assertEq(
+            afterRevert.lastUpdateTimestamp,
+            before.lastUpdateTimestamp,
+            "timestamp should not advance on stale checkpoint"
+        );
+    }
+
+    function test_updateManagementFee_revertsWhenFeeIsUnchangedWithoutForwardingTimestamp() public {
+        NestHubAccountant.AccountantState memory before = NEST_ACCOUNTANT.getAccountantState();
+        vm.warp(uint256(before.lastUpdateTimestamp) + 1 days);
+
+        vm.expectRevert(Errors.SameValue.selector);
+        NEST_ACCOUNTANT.updateManagementFee(before.managementFee);
+
+        NestHubAccountant.AccountantState memory afterRevert = NEST_ACCOUNTANT.getAccountantState();
+        assertEq(afterRevert.managementFee, before.managementFee, "same-value call should not change fee");
+        assertEq(
+            afterRevert.lastUpdateTimestamp, before.lastUpdateTimestamp, "same-value call should not advance timestamp"
+        );
+    }
+
+    /// @dev Ensures updateManagementFee forfeits the old-fee interval and the new fee applies prospectively
+    function test_updateManagementFee_forfeitsOldFeeAndNewFeeAppliesFromNextUpdate() public {
         address _impl = _deployNestAccountantImplementation();
         address _proxy =
             _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
@@ -424,50 +493,38 @@ contract NestAccountantForkTest is Constants, Test {
         NestHubAccountant.AccountantState memory initialState = accountant.getAccountantState();
         uint32 newFee = 20000; // 2% annual fee
 
-        // Use lastUpdateTimestamp as base (equals block.timestamp at init) to avoid optimizer
-        // re-evaluating block.timestamp after vm.warp
         uint256 t0 = initialState.lastUpdateTimestamp;
 
-        // Warp so there is elapsed time for the old fee to accrue
         vm.warp(t0 + 5 days);
-
-        accountant.updateManagementFee(newFee, uint128(IERC20(NALPHA).totalSupply()));
+        accountant.updateManagementFee(newFee);
 
         NestHubAccountant.AccountantState memory stateAfterFeeUpdate = accountant.getAccountantState();
         assertEq(stateAfterFeeUpdate.managementFee, newFee, "Management fee should be updated");
-        // Old fee should have accrued during the elapsed period
-        assertGt(stateAfterFeeUpdate.feesOwedInBase, 0, "Old fee should accrue on management fee update");
-        // Timestamp and shares checkpoint should be refreshed
+        assertEq(stateAfterFeeUpdate.feesOwedInBase, 0, "old-fee interval should be forfeited");
+        assertEq(stateAfterFeeUpdate.exchangeRate, initialState.exchangeRate, "fee update should not move rate");
         assertEq(stateAfterFeeUpdate.lastUpdateTimestamp, uint64(t0 + 5 days), "Timestamp should refresh");
 
-        uint128 feesAfterFeeChange = stateAfterFeeUpdate.feesOwedInBase;
-
-        // Now update exchange rate — only the new fee applies from here
         vm.warp(t0 + 10 days);
-
-        uint96 grossRate = initialState.exchangeRate; // same rate
+        uint96 grossRate = initialState.exchangeRate;
         accountant.updateExchangeRate(grossRate, uint128(IERC20(NALPHA).totalSupply()));
 
         NestHubAccountant.AccountantState memory finalState = accountant.getAccountantState();
-        // Net rate should be less than gross rate due to management fee
         assertLt(finalState.exchangeRate, grossRate, "Net rate should be less than gross rate");
-        assertGt(finalState.feesOwedInBase, feesAfterFeeChange, "Additional fees should accrue on exchange rate update");
+        assertGt(finalState.feesOwedInBase, 0, "new fee should accrue after the fee-change timestamp");
     }
 
     /// @dev Ensures `updateManagementFee` reverts when fee exceeds cap (20%)
     function test_updateManagementFee_revertsWhenFeeExceedsCap() public {
         uint32 excessiveFee = 200001; // Just over 20%
-        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
         vm.expectRevert(Errors.ManagementFeeTooLarge.selector);
-        NEST_ACCOUNTANT.updateManagementFee(excessiveFee, _supply);
+        NEST_ACCOUNTANT.updateManagementFee(excessiveFee);
     }
 
     /// @dev Ensures `updateManagementFee` reverts when called by unauthorized address
     function test_updateManagementFee_revertsWhenUnauthorized() public {
-        uint128 _supply = uint128(IERC20(NALPHA).totalSupply());
         vm.prank(address(1));
         _expectAuthUnauthorized();
-        NEST_ACCOUNTANT.updateManagementFee(15000, _supply);
+        NEST_ACCOUNTANT.updateManagementFee(15000);
     }
 
     // ======================= updatePayoutAddress Tests =======================
@@ -870,7 +927,7 @@ contract NestAccountantForkTest is Constants, Test {
         // 0.1% fee + ~1h interval => per-share discount of ~0.1 rate units, i.e. sub-unit and truncated by
         // the old code. Realization threshold here is ~31500s (~8.75h).
         uint32 lowFee = 1000;
-        NEST_ACCOUNTANT.updateManagementFee(lowFee, supply);
+        NEST_ACCOUNTANT.updateManagementFee(lowFee);
 
         uint96 grossRate = 1_000_000;
         uint256 step = 3601; // just above the 3600s minimum delay, below the realization threshold
@@ -1056,7 +1113,7 @@ contract NestAccountantForkTest is Constants, Test {
         // preserved (frozen) — not forfeited and not realized while the fee is 0.
         t += step;
         vm.warp(t);
-        acct.updateManagementFee(0, uint128(localSupply));
+        acct.updateManagementFee(0);
         uint256 carryAtDisable = acct.managementFeeCarryForTesting();
         assertEq(acct.getAccountantState().managementFee, 0, "fee must be disabled");
         assertGe(carryAtDisable, oneRateUnitInBase, "earned carry must be preserved when the fee is disabled");
@@ -1077,7 +1134,7 @@ contract NestAccountantForkTest is Constants, Test {
         // unit is owed — its base value is fixed at what was earned, NOT amplified by the grown supply.
         t += step;
         vm.warp(t);
-        acct.updateManagementFee(1000, grownSupply); // 0.1%
+        acct.updateManagementFee(1000); // 0.1%
         while (acct.getAccountantState().exchangeRate == grossRate) {
             t += step;
             vm.warp(t);
@@ -1095,7 +1152,7 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Ensures zero management fee passes gross rate through unchanged
     function test_updateExchangeRate_zeroMgmtFeePassesGrossRateThrough() public {
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
         uint96 grossRate = state.exchangeRate;
 
@@ -1153,7 +1210,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -1194,7 +1251,7 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Sanity: when pre-accrual liability is zero the fix is a no-op and existing behaviour is preserved.
     function test_updateExchangeRate_zeroLiabilityIsNoOp() public {
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
 
         // Update 1: zero management fee → no fees accrue
@@ -1242,7 +1299,7 @@ contract NestAccountantForkTest is Constants, Test {
     /// @dev Enables perf fee after zero-fee growth; HWM must reset to the current gross checkpoint
     function test_updatePerformanceFee_resetsHWMOnEnable() public {
         // Disable management fee for clarity
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
 
@@ -1264,7 +1321,7 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev After HWM reset on enable, submitting the same gross rate must not charge perf fees
     function test_updatePerformanceFee_noRetroactiveTaxation() public {
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
 
@@ -1289,7 +1346,7 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Disable then re-enable perf fee: HWM resets again on second 0->non-zero transition
     function test_updatePerformanceFee_reEnableResetsHWM() public {
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
 
@@ -1327,7 +1384,7 @@ contract NestAccountantForkTest is Constants, Test {
     ///      not cleared the old high. The baseline must be preserved.
     function test_updatePerformanceFee_reEnableWithLiveReservePreservesHWM() public {
         uint256 _supply = IERC20(NALPHA).totalSupply();
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(_supply));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
@@ -1382,7 +1439,7 @@ contract NestAccountantForkTest is Constants, Test {
     ///      gate that preserved the old HWM would get wrong.
     function test_updatePerformanceFee_reEnableRatchetsHWMUpOnDisabledPeriodGain() public {
         uint256 _supply = IERC20(NALPHA).totalSupply();
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(_supply));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
@@ -1429,7 +1486,7 @@ contract NestAccountantForkTest is Constants, Test {
 
     /// @dev Changing fee from >0 to >0 must NOT reset HWM
     function test_updatePerformanceFee_noResetOnFeeChange() public {
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
 
@@ -1548,7 +1605,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateLower(900_000); // 10% lower bound
 
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply())); // disable mgmt fee for clarity
+        NEST_ACCOUNTANT.updateManagementFee(0); // disable mgmt fee for clarity
 
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
 
@@ -1585,7 +1642,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
 
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
 
@@ -1621,7 +1678,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
 
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
 
@@ -1669,7 +1726,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHurdleRate(100_000); // 10% annualized hurdle
 
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
@@ -1696,7 +1753,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHurdleRate(50_000); // 5% annualized
 
         // Wait 1 year: effectiveHWM = 1_000_000 + 1_000_000 * 50_000 / 1_000_000 = 1_050_000
@@ -1757,7 +1814,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(_supply));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback → all fee to reserve
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -1809,7 +1866,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_300_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(_supply));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback → all fee to reserve
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -1860,7 +1917,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(500_000); // 50% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days); // 90 day window
 
@@ -1884,7 +1941,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback (all to reserve)
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -1918,7 +1975,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback: every gain creates reserve
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
         NEST_ACCOUNTANT.updateEpochsPerWindow(0); // disabled epoching: fix collapses to one epoch/window
@@ -1952,7 +2009,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -1995,7 +2052,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -2036,7 +2093,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -2084,7 +2141,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         // holdbackRate defaults to 0
 
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
@@ -2102,7 +2159,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000);
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -2133,7 +2190,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -2167,7 +2224,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -2204,7 +2261,7 @@ contract NestAccountantForkTest is Constants, Test {
         NEST_ACCOUNTANT.updateUpper(1_200_000);
         NEST_ACCOUNTANT.updateLower(800_000);
         NEST_ACCOUNTANT.updatePerformanceFee(200_000); // 20%
-        NEST_ACCOUNTANT.updateManagementFee(0, uint128(IERC20(NALPHA).totalSupply()));
+        NEST_ACCOUNTANT.updateManagementFee(0);
         NEST_ACCOUNTANT.updateHoldbackRate(1_000_000); // 100% holdback
         NEST_ACCOUNTANT.updateCrystallizationWindow(90 days);
 
@@ -2260,7 +2317,7 @@ contract NestAccountantForkTest is Constants, Test {
     function test_mgmtFee_lateNAVIncrease_usesMinGrossCheckpoint() public {
         NEST_ACCOUNTANT.updateUpper(1_100_000);
         NEST_ACCOUNTANT.updateLower(900_000);
-        NEST_ACCOUNTANT.updateManagementFee(10_000, uint128(IERC20(NALPHA).totalSupply())); // 1%
+        // Management fee is initialized to 1%.
         NEST_ACCOUNTANT.updatePerformanceFee(0);
 
         NestHubAccountant.AccountantState memory state = NEST_ACCOUNTANT.getAccountantState();
@@ -2287,9 +2344,8 @@ contract NestAccountantForkTest is Constants, Test {
         assertEq(feesSecondInterval, feesAfterFirst, "Fees should use min(lastPostLiabilityRate, newGross) as basis");
     }
 
-    /// @dev Fee change with initialized gross checkpoint: old fee stops at checkpoint, new fee starts fresh
-    function test_mgmtFee_feeChangeAccruesOldFeeAndCheckpoints() public {
-        // Deploy accountant with wider bounds — this test exercises fee accrual, not bounds checking
+    /// @dev Fee change forfeits the old-fee interval and starts the new fee from the new checkpoint
+    function test_mgmtFee_feeChangeForfeitsOldFeeAndCheckpoints() public {
         address _impl = _deployNestAccountantImplementation();
         address _proxy =
             _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
@@ -2298,28 +2354,19 @@ contract NestAccountantForkTest is Constants, Test {
         NestHubAccountant.AccountantState memory state = accountant.getAccountantState();
         uint256 t0 = state.lastUpdateTimestamp;
 
-        // Warp and accrue under old fee
         vm.warp(t0 + 10 days);
-
-        accountant.updateManagementFee(20_000, uint128(IERC20(NALPHA).totalSupply())); // 2% — accrues old 1% for 10 days
+        accountant.updateManagementFee(20_000);
 
         NestHubAccountant.AccountantState memory afterChange = accountant.getAccountantState();
-        uint128 feesFromOldFee = afterChange.feesOwedInBase;
-        assertGt(feesFromOldFee, 0, "Old fee should have accrued");
+        assertEq(afterChange.feesOwedInBase, 0, "old-fee interval should be forfeited");
+        assertEq(afterChange.exchangeRate, state.exchangeRate, "fee change should not move rate");
         assertEq(afterChange.lastUpdateTimestamp, uint64(t0 + 10 days), "Checkpoint should refresh");
 
-        // Now warp again and do an exchange rate update — new 2% fee should apply
         vm.warp(t0 + 20 days);
         accountant.updateExchangeRate(state.exchangeRate, uint128(IERC20(NALPHA).totalSupply()));
 
         NestHubAccountant.AccountantState memory afterUpdate = accountant.getAccountantState();
-        uint128 feesFromNewFee = afterUpdate.feesOwedInBase - feesFromOldFee;
-
-        // New fee is 2x old fee, same time period, same basis → fees should be ~2x
-        // Allow 1% relative tolerance for integer rounding across different fee computations
-        assertApproxEqRel(
-            feesFromNewFee, feesFromOldFee * 2, 0.01e18, "New 2% fee should produce ~2x fees vs old 1% fee"
-        );
+        assertGt(afterUpdate.feesOwedInBase, 0, "new fee should accrue after the fee-change checkpoint");
     }
 
     /// @dev Upgrade fallback: lastPostLiabilityRate == 0 means net-rate fallback; first update seeds it
@@ -2358,7 +2405,7 @@ contract NestAccountantForkTest is Constants, Test {
         MockNestAccountant accountant = MockNestAccountant(
             _deployNestAccountantProxyWithInitParams(impl, totalSharesBefore, 1_100_000, 900_000, 3600)
         );
-        accountant.updateManagementFee(100_000, uint128(IERC20(NALPHA).totalSupply())); // 10%
+        accountant.updateManagementFee(100_000); // 10%
         uint256 oneShare = 10 ** IERC20Metadata(NALPHA).decimals();
 
         // First update — baseline with current supply, 30 days elapsed
@@ -2425,11 +2472,8 @@ contract NestAccountantForkTest is Constants, Test {
         );
     }
 
-    /// @dev Ensures updateManagementFee accrues the elapsed old fee by reducing the net exchangeRate (only
-    ///      down), while leaving lastGrossRate and the HWM untouched, and that the booked fee matches the
-    ///      rate drop (lockstep, same as updateExchangeRate).
-    function test_updateManagementFee_reducesNetRateNotGrossOrHWM() public {
-        // Wide bounds so the multi-day accrual isn't clipped by allowedExchangeRateChange.
+    /// @dev A fee update is bookkeeping-only: it changes the fee and timestamp without touching fee or rate state.
+    function test_updateManagementFee_doesNotMutateRateOrFeeState() public {
         address _impl = _deployNestAccountantImplementation();
         address _proxy =
             _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
@@ -2437,121 +2481,59 @@ contract NestAccountantForkTest is Constants, Test {
 
         NestHubAccountant.AccountantState memory stateBefore = accountant.getAccountantState();
         NestHubAccountant.PerformanceFeeCheckpoint memory checkpointBefore = accountant.getPerformanceFeeCheckpoint();
-        uint96 lastGrossBefore = stateBefore.lastGrossRate;
-        uint256 t0 = stateBefore.lastUpdateTimestamp;
-        uint256 totalShares = IERC20(NALPHA).totalSupply();
-        uint256 oneShare = 10 ** IERC20Metadata(NALPHA).decimals();
+        uint256 carryBefore = accountant.managementFeeCarryForTesting();
+        uint64 updateTime = stateBefore.lastUpdateTimestamp + 5 days;
 
-        vm.warp(t0 + 5 days);
-        accountant.updateManagementFee(20_000, uint128(totalShares));
+        vm.warp(updateTime);
+        vm.recordLogs();
+        accountant.updateManagementFee(20_000);
 
         NestHubAccountant.AccountantState memory stateAfter = accountant.getAccountantState();
         NestHubAccountant.PerformanceFeeCheckpoint memory checkpointAfter = accountant.getPerformanceFeeCheckpoint();
-
-        // Net rate drops by the accrued management fee; gross rate and HWM are untouched.
-        assertLt(stateAfter.exchangeRate, stateBefore.exchangeRate, "exchangeRate should drop by the accrued fee");
-        assertEq(stateAfter.lastGrossRate, lastGrossBefore, "lastGrossRate should not change on fee update");
-        assertEq(checkpointAfter.highWaterMark, checkpointBefore.highWaterMark, "HWM should not change on fee update");
-
-        // Lockstep: the booked fee equals the realized rate haircut applied to all shares.
-        uint256 rateDrop = uint256(stateBefore.exchangeRate) - uint256(stateAfter.exchangeRate);
+        assertEq(stateAfter.managementFee, 20_000, "management fee should update");
+        assertEq(stateAfter.lastUpdateTimestamp, updateTime, "timestamp should advance");
+        assertEq(stateAfter.exchangeRate, stateBefore.exchangeRate, "exchangeRate should not change");
+        assertEq(stateAfter.lastGrossRate, stateBefore.lastGrossRate, "lastGrossRate should not change");
+        assertEq(stateAfter.feesOwedInBase, stateBefore.feesOwedInBase, "fees owed should not change");
         assertEq(
-            stateAfter.feesOwedInBase, rateDrop * totalShares / oneShare, "booked fee must match the net-rate haircut"
+            stateAfter.totalSharesLastUpdate, stateBefore.totalSharesLastUpdate, "share checkpoint should not change"
         );
-    }
-
-    /// @dev updateManagementFee mutates the net exchangeRate when it accrues the elapsed old fee, so it must
-    ///      emit ExchangeRateUpdated (same as updateExchangeRate) for off-chain rate trackers.
-    function test_updateManagementFee_emitsExchangeRateUpdatedOnAccrual() public {
-        // Wide bounds so the multi-day accrual isn't clipped by allowedExchangeRateChange.
-        address _impl = _deployNestAccountantImplementation();
-        address _proxy =
-            _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
-        MockNestAccountant accountant = MockNestAccountant(_proxy);
-
-        NestHubAccountant.AccountantState memory stateBefore = accountant.getAccountantState();
-        uint256 t0 = stateBefore.lastUpdateTimestamp;
-        uint96 oldRate = stateBefore.exchangeRate;
-        uint128 supply = uint128(IERC20(NALPHA).totalSupply());
-
-        vm.warp(t0 + 5 days);
-
-        vm.recordLogs();
-        accountant.updateManagementFee(20_000, supply);
-
-        uint96 newRate = accountant.getAccountantState().exchangeRate;
-        assertLt(newRate, oldRate, "accrual should drop the rate in this setup");
-
-        // Exactly one ExchangeRateUpdated must fire, carrying (oldRate, newRate, currentTime).
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 sig = keccak256("ExchangeRateUpdated(uint96,uint96,uint64)");
-        uint256 found = 0;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] != sig) continue;
-            found++;
-            (uint96 emittedOld, uint96 emittedNew, uint64 emittedTime) =
-                abi.decode(logs[i].data, (uint96, uint96, uint64));
-            assertEq(emittedOld, oldRate, "emitted oldRate");
-            assertEq(emittedNew, newRate, "emitted newRate must match stored rate");
-            assertEq(emittedTime, uint64(t0 + 5 days), "emitted currentTime");
-        }
-        assertEq(found, 1, "exactly one ExchangeRateUpdated expected");
-    }
-
-    /// @dev updateManagementFee that accrues nothing realized (sub-threshold, rate stays flat) must NOT emit
-    ///      ExchangeRateUpdated — a no-op rate "change" would be a misleading event.
-    function test_updateManagementFee_noExchangeRateEventWhenRateFlat() public {
-        address _impl = _deployNestAccountantImplementation();
-        address _proxy =
-            _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
-        MockNestAccountant accountant = MockNestAccountant(_proxy);
-        uint128 supply = uint128(IERC20(NALPHA).totalSupply());
-        accountant.updateManagementFee(1000, supply); // 0.1%, dt == 0 so nothing accrues
-
-        uint96 rate = accountant.getAccountantState().exchangeRate;
-        uint256 t = accountant.getAccountantState().lastUpdateTimestamp + 3601; // one step past min delay
-        vm.warp(t);
-
-        vm.recordLogs();
-        accountant.updateManagementFee(2000, supply);
-        assertEq(accountant.getAccountantState().exchangeRate, rate, "rate must stay flat while sub-threshold");
-
+        assertEq(accountant.managementFeeCarryForTesting(), carryBefore, "management fee carry should not change");
+        assertEq(checkpointAfter.highWaterMark, checkpointBefore.highWaterMark, "HWM should not change on fee update");
+        assertEq(
+            checkpointAfter.clawbackReferenceRate,
+            checkpointBefore.clawbackReferenceRate,
+            "clawback reference should not change"
+        );
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 sig = keccak256("ExchangeRateUpdated(uint96,uint96,uint64)");
         for (uint256 i = 0; i < logs.length; i++) {
-            assertTrue(logs[i].topics[0] != sig, "must not emit ExchangeRateUpdated when rate is flat");
+            assertTrue(logs[i].topics[0] != sig, "bookkeeping-only fee update must not emit a rate update");
         }
     }
 
-    /// @dev The rate drop in updateManagementFee is subject to the same lower bound as updateExchangeRate.
-    ///      A long elapsed interval accrues a haircut that breaches it, so the call reverts; calling
-    ///      updateExchangeRate first (which drains the fee within bounds and re-checkpoints) unblocks it.
-    function test_updateManagementFee_revertsWhenAccruedFeeBreachesLowerBound() public {
-        NestHubAccountant.AccountantState memory s = NEST_ACCOUNTANT.getAccountantState();
-        uint128 supply = uint128(IERC20(NALPHA).totalSupply());
-        uint256 t0 = s.lastUpdateTimestamp;
+    /// @dev Fee updates do not apply exchange-rate bounds, even when forfeited fees would have breached them.
+    function test_updateManagementFee_succeedsWhenElapsedFeeWouldBreachLowerBound() public {
+        NestHubAccountant.AccountantState memory before = NEST_ACCOUNTANT.getAccountantState();
+        uint64 updateTime = before.lastUpdateTimestamp + 1 days;
+        vm.warp(updateTime);
+        NEST_ACCOUNTANT.updateManagementFee(20_000);
 
-        // One day of the 1% fee drops the rate ~27 units — far past the tight lower bound (~3 units).
-        vm.warp(t0 + 1 days);
-        vm.expectRevert(Errors.RateOutOfBounds.selector);
-        NEST_ACCOUNTANT.updateManagementFee(20_000, supply);
-
-        // Workaround: updateExchangeRate first (gross offsets the haircut so net stays within bounds) drains
-        // the accrued fee and advances the checkpoint; the fee change then succeeds.
-        NEST_ACCOUNTANT.updateExchangeRate(uint96(1_000_027), supply);
-        NEST_ACCOUNTANT.updateManagementFee(20_000, supply);
-        assertEq(NEST_ACCOUNTANT.getAccountantState().managementFee, 20_000, "fee should update after draining");
+        NestHubAccountant.AccountantState memory afterUpdate = NEST_ACCOUNTANT.getAccountantState();
+        assertEq(afterUpdate.managementFee, 20_000, "fee should update without a bounds check");
+        assertEq(afterUpdate.lastUpdateTimestamp, updateTime, "elapsed interval should be checkpointed");
+        assertEq(afterUpdate.exchangeRate, before.exchangeRate, "fee update should not move rate");
+        assertEq(afterUpdate.feesOwedInBase, before.feesOwedInBase, "elapsed fees should be forfeited");
     }
 
-    /// @dev The managementFeeReserve carry is a single shared accumulator: a sub-threshold accrual from
-    ///      updateExchangeRate must be continued (not reset) by a following updateManagementFee.
-    function test_managementFeeReserve_carryContinuesAcrossUpdateExchangeRateAndUpdateManagementFee() public {
+    /// @dev Previously accumulated carry is preserved, but updateManagementFee adds no new accrual to it.
+    function test_managementFeeCarry_isPreservedAcrossUpdateManagementFee() public {
         address _impl = _deployNestAccountantImplementation();
         address _proxy =
             _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
         MockNestAccountant accountant = MockNestAccountant(_proxy);
         uint128 supply = uint128(IERC20(NALPHA).totalSupply());
-        accountant.updateManagementFee(1000, supply); // 0.1%, dt == 0 so nothing accrues
+        accountant.updateManagementFee(1000); // 0.1%, dt == 0 so nothing accrues
 
         uint96 grossRate = 1_000_000;
         uint256 step = 3601;
@@ -2566,34 +2548,32 @@ contract NestAccountantForkTest is Constants, Test {
         assertEq(accountant.getAccountantState().exchangeRate, grossRate, "rate flat while sub-threshold");
         assertEq(accountant.getAccountantState().feesOwedInBase, 0, "no fee yet");
 
-        // updateManagementFee over an equal step must continue from r1 (same fee, rate, supply => equal
-        // increment), so the reserve doubles. If it reset, it would equal one increment, not two.
         t += step;
         vm.warp(t);
-        accountant.updateManagementFee(2000, supply);
-        assertEq(accountant.managementFeeCarryForTesting(), 2 * r1, "reserve must continue across the two paths");
-        assertEq(accountant.getAccountantState().exchangeRate, grossRate, "rate still flat while sub-threshold");
-        assertEq(accountant.getAccountantState().feesOwedInBase, 0, "still no fee");
+        accountant.updateManagementFee(2000);
+        assertEq(accountant.managementFeeCarryForTesting(), r1, "existing carry should be preserved without accrual");
+        assertEq(accountant.getAccountantState().lastUpdateTimestamp, t, "forfeited interval should be checkpointed");
+        assertEq(accountant.getAccountantState().exchangeRate, grossRate, "fee update should not move rate");
+        assertEq(accountant.getAccountantState().feesOwedInBase, 0, "fee update should not book fees");
     }
 
-    /// @dev updateManagementFee routes through the shared accrual, so a short, low-fee interval is carried
-    ///      into the reserve instead of being truncated to zero (the bug the standalone path used to have).
-    function test_updateManagementFee_subThresholdAccruesToReserveNotZero() public {
+    /// @dev Even a sub-threshold interval is forfeited rather than added to management-fee carry.
+    function test_updateManagementFee_subThresholdIntervalIsForfeited() public {
         address _impl = _deployNestAccountantImplementation();
         address _proxy =
             _deployNestAccountantProxyWithInitParams(_impl, IERC20(NALPHA).totalSupply(), 1_100_000, 900_000, 3600);
         MockNestAccountant accountant = MockNestAccountant(_proxy);
-        uint128 supply = uint128(IERC20(NALPHA).totalSupply());
-        accountant.updateManagementFee(1000, supply); // 0.1%, dt == 0
+        accountant.updateManagementFee(1000); // 0.1%, dt == 0
 
         NestHubAccountant.AccountantState memory before = accountant.getAccountantState();
         vm.warp(uint256(before.lastUpdateTimestamp) + 3601);
-        accountant.updateManagementFee(2000, supply);
+        accountant.updateManagementFee(2000);
 
         NestHubAccountant.AccountantState memory s = accountant.getAccountantState();
-        assertGt(accountant.managementFeeCarryForTesting(), 0, "short interval must carry, not truncate to zero");
-        assertEq(s.exchangeRate, before.exchangeRate, "rate unchanged while sub-unit");
-        assertEq(s.feesOwedInBase, 0, "no fee booked while sub-unit");
+        assertEq(accountant.managementFeeCarryForTesting(), 0, "forfeited interval should not enter carry");
+        assertEq(s.lastUpdateTimestamp, uint64(before.lastUpdateTimestamp + 3601), "timestamp should advance");
+        assertEq(s.exchangeRate, before.exchangeRate, "fee update should not move rate");
+        assertEq(s.feesOwedInBase, 0, "fee update should not book fees");
     }
 
     /// @dev Cadence invariance: many small updates accrue the same TOTAL fee as one big update over the same

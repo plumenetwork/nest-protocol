@@ -17,10 +17,10 @@
  */
 pragma solidity ^0.8.30;
 
-import {ITokenMinterV2} from "contracts/interfaces/vendor/cctp/ITokenMinterV2.sol";
+import {ITokenMinterV2} from "contracts/vendor/cctp/interfaces/ITokenMinterV2.sol";
 import {Rescuable} from "./roles/Rescuable.sol";
 import {Denylistable} from "./roles/Denylistable.sol";
-import {IMintBurnToken} from "contracts/interfaces/vendor/cctp/IMintBurnToken.sol";
+import {IMintBurnToken} from "contracts/vendor/cctp/interfaces/IMintBurnToken.sol";
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import "forge-std/console2.sol";

@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import {NestHubAccountant} from "contracts/accountant/NestHubAccountant.sol";
 import {IERC7540Redeem} from "contracts/interfaces/IERC7540.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
 
 /// @title  INestVaultCore
 /// @notice Interface for interacting with the Nest vault core logic without importing the full implementation

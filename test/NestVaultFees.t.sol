@@ -15,7 +15,7 @@ import {MockRateProvider} from "test/mock/MockRateProvider.sol";
 import {MockAuthority} from "test/mock/MockAuthority.sol";
 import {NestVault} from "contracts/NestVault.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
 import {Errors} from "contracts/types/Errors.sol";
 
 contract NestVaultFeesTest is TestHelperOz5 {
@@ -44,11 +44,11 @@ contract NestVaultFeesTest is TestHelperOz5 {
         asset = new ERC20Mock("Asset", "AST");
 
         share = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[LOCAL_EID])),
-                abi.encodeCall(NestShareOFT.initialize, ("Share", "SHARE", address(this), address(this)))
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[LOCAL_EID])),
+                    abi.encodeCall(NestShareOFT.initialize, ("Share", "SHARE", address(this), address(this)))
+                ))
         );
 
         vault = MockNestVault(
@@ -754,7 +754,16 @@ contract NestVaultFeesTest is TestHelperOz5 {
         vault.setMaxFee(NestVaultCoreTypes.Fees.Deposit, _fee(200_000, 4e6));
     }
 
-    function test_fees_defaultToZero() public {
+    function test_setMaxFee_rateBelow_currentRateFee_reverts() public {
+        vault.setMaxFee(NestVaultCoreTypes.Fees.Deposit, _fee(5000, 0));
+        vault.setFee(NestVaultCoreTypes.Fees.Deposit, _fee(5000, 0));
+
+        // Mixed-direction cap change: rate below the active fee reverts even with a higher flat
+        vm.expectRevert(Errors.InvalidFee.selector);
+        vault.setMaxFee(NestVaultCoreTypes.Fees.Deposit, _fee(1000, 100));
+    }
+
+    function test_fees_defaultToZero() public view {
         (uint32 dRate, uint256 dFlat) = vault.fees(NestVaultCoreTypes.Fees.Deposit);
         (uint32 rRate, uint256 rFlat) = vault.fees(NestVaultCoreTypes.Fees.Redemption);
         (uint32 iRate, uint256 iFlat) = vault.fees(NestVaultCoreTypes.Fees.InstantRedemption);

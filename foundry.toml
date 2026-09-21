@@ -3,18 +3,27 @@ solc_version = '0.8.30'
 src = 'contracts'
 out = 'out'
 cache_path = 'cache'
+# Exact deployed source snapshots depend on their historical import trees.
+# Keep them out of current deployment builds; provenance is recorded beside them.
+skip = ['contracts/upgrades/deployed/**']
 libs = [
     'node_modules'
 ]
-fs_permissions = [{ access = "read-write", path = "./"}]
+fs_permissions = [
+    { access = "read-write", path = "./" },
+    # nest-fee-simulator is a sibling repo; FeeSimGolden.t.sol writes golden vectors there.
+    { access = "read-write", path = "/Users/rafa/Documents/Plume/nest-fee-simulator" },
+]
 
 remappings = [
     'forge-std/=node_modules/forge-std/src',
     '@openzeppelin/=node_modules/@openzeppelin',
+    '@openzeppelin-4.9.3/=script/vendor/openzeppelin-4.9.3/',
     '@solmate/=node_modules/solmate/src',
     '@boring-vault/=node_modules/boring-vault',
     'src/=node_modules/boring-vault/src',
     '@predicate/=node_modules/@predicate/contracts',
+    '@predicate-v2/=contracts/vendor/predicate-v2/',
     '@pendle/=node_modules/@pendle',
     'createx/=node_modules/createx/src',
     'solidity-bytes-utils/contracts/=node_modules/@layerzerolabs/toolbox-foundry/lib/solidity-bytes-utils/',
@@ -35,5 +44,17 @@ hyperevm = "${HYPEREVM_RPC}"
 berachain = "${BERACHAIN_RPC}"
 bsc = "${BSC_RPC}"
 
+[etherscan]
+mainnet    = { key = "${ETHERSCAN_API_KEY_1}",     chain = 1,     url = "https://api.etherscan.io/v2/api?chainid=1" }
+bsc        = { key = "${ETHERSCAN_API_KEY_56}",    chain = 56,    url = "https://api.etherscan.io/v2/api?chainid=56" }
+arbitrum   = { key = "${ETHERSCAN_API_KEY_42161}", chain = 42161, url = "https://api.etherscan.io/v2/api?chainid=42161" }
+worldchain = { key = "${ETHERSCAN_API_KEY_480}",   chain = 480,   url = "https://api.etherscan.io/v2/api?chainid=480" }
+plasma     = { key = "${ETHERSCAN_API_KEY_1}",     chain = 9745,  url = "https://api.etherscan.io/v2/api?chainid=9745" }
+plume      = { key = "${PLUME_VERIFIER_API_KEY}",  chain = 98866, url = "${PLUME_VERIFIER_URL}" }
+
+
 [lint]
 lint_on_build = false
+
+[fmt]
+ignore = ["contracts/upgrades/deployed/**"]

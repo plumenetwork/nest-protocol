@@ -17,6 +17,11 @@
       "nethermind": "0x882a1ee8891c7d22310dedf032ef9653785532b8",
       "canary":  "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3"
     },
+    "43114": {
+      "lz": "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+      "nethermind": "0x882a1ee8891c7d22310dedf032ef9653785532b8",
+      "canary":  "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3"
+    },
     "42161": {
       "lz": "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
       "nethermind": "0x882a1ee8891c7d22310dedf032ef9653785532b8",
@@ -36,6 +41,11 @@
       "lz": "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
       "nethermind": "0x882a1ee8891c7d22310dedf032ef9653785532b8",
       "canary":  "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3"
+    },
+    "8453": {
+      "lz": "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+      "nethermind": "0x882a1ee8891c7d22310dedf032ef9653785532b8",
+      "canary": "0x395b14700812cccc38b8e64f0a06ce2045fe9ba3"
     }
   },
   "enforcedOptions": {

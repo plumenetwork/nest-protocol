@@ -8,11 +8,11 @@ import {Id, IMorpho, Market, MarketParams, Position as MorphoPosition} from "@mo
 import {ORACLE_PRICE_SCALE} from "@morpho/libraries/ConstantsLib.sol";
 import {MarketParamsLib} from "@morpho/libraries/MarketParamsLib.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
-import {BundleBuildLib} from "contracts/morpho/libraries/BundleBuildLib.sol";
-import {BundleCalldataLib} from "contracts/morpho/libraries/BundleCalldataLib.sol";
-import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
-import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
-import {NestBundleErrors} from "contracts/morpho/types/Errors.sol";
+import {BundleBuildLib} from "contracts/integrations/morpho/libraries/BundleBuildLib.sol";
+import {BundleCalldataLib} from "contracts/integrations/morpho/libraries/BundleCalldataLib.sol";
+import {MorphoAdapter} from "contracts/integrations/morpho/MorphoAdapter.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
 import {GeneralAdapter1} from "contracts/vendor/morpho/GeneralAdapter1.sol";
 import {
     UserIntent,
@@ -23,7 +23,7 @@ import {
     RouteInput,
     Position,
     VaultActions
-} from "contracts/morpho/types/BundleTypes.sol";
+} from "contracts/integrations/morpho/types/BundleTypes.sol";
 
 contract MockMorphoBundleUnit {
     mapping(bytes32 => MorphoPosition) internal _positions;
@@ -159,7 +159,7 @@ contract BundleBuildLibTest is Test {
     address internal constant BUNDLER = address(0x2002);
     address internal constant VAULT = address(0x2003);
     address internal constant TELLER = address(0x2004);
-    address internal constant PREDICATE_PROXY = address(0x2005);
+    address internal constant COMPLIANCE_PROXY = address(0x2005);
     address internal constant ATOMIC_SOLVER = address(0x2006);
     address internal constant ATOMIC_QUEUE = address(0x2007);
     address internal constant ACCOUNTANT = address(0x2008);
@@ -195,7 +195,7 @@ contract BundleBuildLibTest is Test {
         vm.mockCall(
             VAULT_AUTHORITY,
             abi.encodeWithSignature(
-                "canCall(address,address,bytes4)", PREDICATE_PROXY, VAULT, bytes4(keccak256("mint(uint256,address)"))
+                "canCall(address,address,bytes4)", COMPLIANCE_PROXY, VAULT, bytes4(keccak256("mint(uint256,address)"))
             ),
             abi.encode(true)
         );
@@ -502,7 +502,7 @@ contract BundleBuildLibTest is Test {
             tellerAuthority,
             abi.encodeWithSignature(
                 "canCall(address,address,bytes4)",
-                PREDICATE_PROXY,
+                COMPLIANCE_PROXY,
                 TELLER,
                 bytes4(keccak256("deposit(address,uint256,uint256)"))
             ),
@@ -532,7 +532,7 @@ contract BundleBuildLibTest is Test {
             tellerAuthority,
             abi.encodeWithSignature(
                 "canCall(address,address,bytes4)",
-                PREDICATE_PROXY,
+                COMPLIANCE_PROXY,
                 TELLER,
                 bytes4(keccak256("deposit(address,uint256,uint256)"))
             ),
@@ -559,14 +559,14 @@ contract BundleBuildLibTest is Test {
             tellerAuthority,
             abi.encodeWithSignature(
                 "canCall(address,address,bytes4)",
-                PREDICATE_PROXY,
+                COMPLIANCE_PROXY,
                 TELLER,
                 bytes4(keccak256("deposit(address,uint256,uint256)"))
             ),
             abi.encode(false)
         );
 
-        vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.IncompatibleContext.selector, PREDICATE_PROXY, TELLER));
+        vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.IncompatibleContext.selector, COMPLIANCE_PROXY, TELLER));
         harness.getTargetBundle(_context(OWNER, OWNER), intent, route, 70, 100);
     }
 
@@ -617,7 +617,7 @@ contract BundleBuildLibTest is Test {
         ctx.bundler = BUNDLER;
         ctx.vault = INestVaultCore(VAULT);
         ctx.teller = TELLER;
-        ctx.predicateProxy = PREDICATE_PROXY;
+        ctx.complianceProxy = COMPLIANCE_PROXY;
         ctx.atomicSolver = ATOMIC_SOLVER;
         ctx.atomicQueue = ATOMIC_QUEUE;
         ctx.owner = owner;

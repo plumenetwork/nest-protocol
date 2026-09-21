@@ -15,8 +15,8 @@
  */
 pragma solidity ^0.8.30;
 
-import "contracts/interfaces/vendor/cctp/ITokenMinter.sol";
-import "contracts/interfaces/vendor/cctp/IMintBurnToken.sol";
+import "contracts/vendor/cctp/interfaces/ITokenMinter.sol";
+import "contracts/vendor/cctp/interfaces/IMintBurnToken.sol";
 import "./roles/Pausable.sol";
 import "./roles/Rescuable.sol";
 import "./roles/TokenController.sol";

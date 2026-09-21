@@ -2,10 +2,10 @@
 pragma solidity ^0.8.30;
 
 import {SYTest, IStandardizedYield} from "test/vendor/Pendle/SYTest_flatten.t.sol";
-import {Constants} from "script/Constants.sol";
+import {Constants} from "test/Constants.sol";
 import {Options, DefenderOptions, TxOverrides} from "@openzeppelin/foundry-upgrades/src/Options.sol";
 import {Upgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
-import {BoringVaultSY} from "contracts/pendle/BoringVaultSY.sol";
+import {BoringVaultSY} from "contracts/integrations/pendle/BoringVaultSY.sol";
 import {NestVault} from "contracts/NestVault.sol";
 import {NestAccountant} from "contracts/accountant/NestAccountant.sol";
 import {Errors} from "contracts/types/Errors.sol";

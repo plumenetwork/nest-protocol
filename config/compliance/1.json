@@ -1,0 +1,11 @@
+{
+  "chainId": 1,
+  "v1": {
+    "serviceManager": "0xf6f4A30EeF7cf51Ed4Ee1415fB3bFDAf3694B0d2",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "ethereum",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  }
+}

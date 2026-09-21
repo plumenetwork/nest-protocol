@@ -1,0 +1,110 @@
+{
+  "symbol": "nJBBB",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+  "name": "Nest Janus Henderson B-BBB CLO ETF Vault",
+  "baseAssetSymbol": "USDC",
+  "vaultType": "NestVault",
+  "accountantType": "NestHubAccountant",
+
+  "contracts": {
+    "share": "0x79a4883586d089028218177B2E89be101F1DC95C",
+    "accountant": "0x7F9f44C53e723F6358B03166ed041Fd3A384f37b",
+    "rolesAuthority": "0x0305dDFd0b9606CAbcf797F6006E6b0854e20BD1",
+    "vaults": [
+      {
+        "address": "0x92b638038dC15177b5453A570E9680ABBa88a729",
+        "assetSymbol": "USDC",
+        "chains": [1, 98866],
+        "composer": "0x542754e537A0d2c07B674541B8a9277Dbd3c4877",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      },
+      {
+        "address": "0x797C4C26eCD2c1CC523035Cf1baF4D682a01E6E3",
+        "assetSymbol": "pUSD",
+        "chains": [98866],
+        "composer": "0x0000000000000000000000000000000000000000",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      },
+      {
+        "address": "0x5c68F5146ff9870D15e1EF2281956d24946c3193",
+        "assetSymbol": "USDT",
+        "chains": [1],
+        "composer": "0x0000000000000000000000000000000000000000",
+        "isPegged": true,
+        "rateProvider": "0x0000000000000000000000000000000000000000"
+      }
+    ]
+  },
+
+  "common": {
+    "predicateProxy": "0xfC0c4222B3A0c9B060C0B959DEc62442036b9035",
+    "operatorRegistry": "0xFAbD98aEe7F100ff31632B5d8124488a39a26835",
+    "redeemOperator": "0xD9B432376cB18c99716865e540bb32c67d795440",
+    "cctpRelayer": "0x7de01896d36Bea9CF072Ac64E41685418941d8bE",
+    "seizer": "0x6D509A5c68e7Ca9D633C9ACb5e077B66e123Ec54",
+    "blacklistHook": "0xB9B833B35640428e09c2D450f36Ac4f91F58CB47",
+    "commonRolesAuthority": "0x93786916e1EE5913A45662a5986559f5785a5BA4"
+  },
+
+  "commonOverrides": {
+    "nestAdapter": "0x0000000000000000000000000000000000000000",
+    "nestUnlooper": "0x0000000000000000000000000000000000000000"
+  },
+
+  "accountantParams": {
+    "totalSharesLastUpdate": 0,
+    "payoutAddress": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "startingExchangeRate": 1000000,
+    "allowedExchangeRateChangeUpper": 1001000,
+    "allowedExchangeRateChangeLower": 999000,
+    "minimumUpdateDelayInSeconds": 3600,
+    "managementFee": 0,
+    "performanceFee": 0
+  },
+
+  "vaultFees": {
+    "deposit": { "rate": 0, "flat": 0 },
+    "redemption": { "rate": 0, "flat": 0 },
+    "instantRedemption": { "rate": 1500, "flat": 0 }
+  },
+
+  "vaultParams": {
+    "minRate": 1
+  },
+
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
+  },
+
+  "composerParams": {
+    "maxRetryableValue": 10000000000000000000
+  },
+
+  "roles": {
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "KEEPER_ROLE": ["0x450545F4cC7425DDe582091a7fe9E63471Af1045"],
+    "UPDATE_EXCHANGE_RATE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ],
+    "MANAGER_ROLE": ["0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"],
+    "CAN_SOLVE_ROLE": [
+      "0x450545F4cC7425DDe582091a7fe9E63471Af1045",
+      "0x4371e7eC29BbB60872E15C5123C3CaC948967Eb7"
+    ]
+  },
+
+  "peers": [98866, 1]
+}

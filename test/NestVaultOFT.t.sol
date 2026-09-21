@@ -29,7 +29,7 @@ import {MockAuthority} from "test/mock/MockAuthority.sol";
 import {MockRateProvider} from "test/mock/MockRateProvider.sol";
 import {MockNestVaultOFT} from "test/mock/MockNestVaultOFT.sol";
 import {NestVaultOFT} from "contracts/NestVaultOFT.sol";
-import {BlacklistHook} from "contracts/hooks/BlacklistHook.sol";
+import {BlacklistHook} from "contracts/compliance/hooks/BlacklistHook.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {Errors} from "contracts/types/Errors.sol";

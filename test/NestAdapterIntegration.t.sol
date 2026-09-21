@@ -18,13 +18,15 @@ import {Call, IBundler3} from "contracts/vendor/bundler3/interfaces/IBundler3.so
 import {ErrorsLib} from "contracts/vendor/bundler3/libraries/ErrorsLib.sol";
 import {NestVault} from "contracts/NestVault.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
-import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
-import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
-import {NestUnlooper} from "contracts/morpho/NestUnlooper.sol";
-import {ITellerPredicateProxy} from "contracts/interfaces/ITellerPredicateProxy.sol";
-import {NestVaultPredicateProxy, PredicateMessage} from "contracts/NestVaultPredicateProxy.sol";
-import {BundleBuildLib} from "contracts/morpho/libraries/BundleBuildLib.sol";
-import {BundleCalldataLib} from "contracts/morpho/libraries/BundleCalldataLib.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {MorphoAdapter} from "contracts/integrations/morpho/MorphoAdapter.sol";
+import {NestUnlooper} from "contracts/integrations/morpho/NestUnlooper.sol";
+import {ITellerPredicateProxy} from "contracts/compliance/interfaces/ITellerPredicateProxy.sol";
+import {ComplianceProxy} from "contracts/compliance/ComplianceProxy.sol";
+import {IComplianceHook} from "contracts/compliance/interfaces/IComplianceHook.sol";
+import {PredicateMessage} from "@predicate/src/interfaces/IPredicateClient.sol";
+import {BundleBuildLib} from "contracts/integrations/morpho/libraries/BundleBuildLib.sol";
+import {BundleCalldataLib} from "contracts/integrations/morpho/libraries/BundleCalldataLib.sol";
 import {
     Bundle,
     BundleContext,
@@ -33,11 +35,12 @@ import {
     RouteInput,
     Position,
     UserIntent
-} from "contracts/morpho/types/BundleTypes.sol";
-import {NestShareMathLib} from "contracts/morpho/libraries/NestShareMathLib.sol";
+} from "contracts/integrations/morpho/types/BundleTypes.sol";
+import {NestShareMathLib} from "contracts/integrations/morpho/libraries/NestShareMathLib.sol";
+import {NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {MockServiceManager} from "test/mock/MockServiceManager.sol";
+import {MockComplianceHook} from "test/mock/MockComplianceHook.sol";
 
 import {IOracle} from "@morpho/interfaces/IOracle.sol";
 import {IMorpho, Id, Market, MarketParams, Position as MorphoPosition} from "@morpho/interfaces/IMorpho.sol";
@@ -80,6 +83,8 @@ contract NestAdapterIntegrationTest is Test {
     using NestShareMathLib for uint256;
 
     string internal constant PLUME_RPC_ENV = "PLUME_RPC_URL";
+    // Historical regression fixture; latest-chain compatibility is covered by the explicit latest-fork smoke test.
+    uint256 internal constant PLUME_FORK_BLOCK = 89_691_600;
 
     address internal constant MORPHO = 0x42b18785CE0Aed7BF7Ca43a39471ED4C0A3e0bB5;
     address internal constant BUNDLER3 = 0x5437C8788f4CFbaA55be6FBf30379bc7dd7f69C3;
@@ -105,7 +110,6 @@ contract NestAdapterIntegrationTest is Test {
     uint256 internal constant ATOMIC_NET_COLLATERAL_TO_USER = 10 * UNIT;
     uint256 internal constant MOCK_TELLER_INITIAL_PUSD = 1_000_000 * UNIT;
     uint8 internal constant QUEUE_FLAG_INSUFFICIENT_BALANCE = 1 << 2;
-    string internal constant POLICY_ID = "TEST_POLICY_ID";
     address internal constant OLD_TELLER_PREDICATE_PROXY = 0x6104fe10ca937a086ba7AdbD0910A4733d380cB6;
 
     address internal proxyAdmin = makeAddr("proxyAdmin");
@@ -115,8 +119,8 @@ contract NestAdapterIntegrationTest is Test {
     IMorpho internal morpho;
     IBundler3 internal bundler3;
     NestAdapter internal nestAdapter;
-    NestVaultPredicateProxy internal predicateProxy;
-    MockServiceManager internal serviceManager;
+    ComplianceProxy internal complianceProxy;
+    MockComplianceHook internal complianceHook;
     AtomicQueue internal atomicQueue;
     AtomicSolverV3 internal atomicSolver;
     NestUnlooper internal nestUnlooper;
@@ -141,8 +145,12 @@ contract NestAdapterIntegrationTest is Test {
 
     function setUp() public {
         string memory rpcUrl = vm.envOr(PLUME_RPC_ENV, string("https://rpc.plume.org"));
-        vm.createSelectFork(rpcUrl);
+        vm.createSelectFork(rpcUrl, PLUME_FORK_BLOCK);
 
+        _setUpIntegrationFixture();
+    }
+
+    function _setUpIntegrationFixture() internal {
         morpho = IMorpho(MORPHO);
         bundler3 = IBundler3(BUNDLER3);
         teller = TellerWithMultiAssetSupport(TELLER_WITH_MULTI_ASSET_SUPPORT);
@@ -163,7 +171,7 @@ contract NestAdapterIntegrationTest is Test {
         nestAdapter = new NestAdapter(BUNDLER3, MORPHO, WRAPPED_NATIVE_PLACEHOLDER);
         assertEq(address(nestAdapter.MORPHO()), MORPHO, "NestAdapter MORPHO mismatch");
         assertEq(nestAdapter.BUNDLER3(), BUNDLER3, "NestAdapter BUNDLER3 mismatch");
-        _deployPredicateProxy();
+        _deployComplianceProxy();
         _deployAtomicQueueAndSolver();
         _deployNestUnlooper();
         _deployForkNestVault();
@@ -176,7 +184,7 @@ contract NestAdapterIntegrationTest is Test {
         baselineBundlerNalpha = ERC20(NALPHA).balanceOf(BUNDLER3);
     }
 
-    function test_integration_fork_liveMorpho_increaseThenDecreaseInstant() public {
+    function test_integration_pinnedFork_liveMorpho_increaseThenDecreaseInstant() public {
         uint256 flashDepositShares = INestVaultCore(address(forkVault)).previewDeposit(FLASH_LOAN_ASSETS);
         uint256 flashDepositAssets = INestVaultCore(address(forkVault)).previewMint(flashDepositShares);
         uint256 supplyCollateralAssets = seedShares + flashDepositShares;
@@ -247,7 +255,7 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_increaseThenDecreaseRedeem_solverPath() public {
+    function test_integration_pinnedFork_liveMorpho_increaseThenDecreaseRedeem_solverPath() public {
         uint256 flashDepositShares = INestVaultCore(address(forkVault)).previewDeposit(FLASH_LOAN_ASSETS);
         uint256 flashDepositAssets = INestVaultCore(address(forkVault)).previewMint(flashDepositShares);
         uint256 supplyCollateralAssets = seedShares + flashDepositShares;
@@ -313,7 +321,7 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_atomicQueueAsyncRedeem_solverPath() public {
+    function test_integration_pinnedFork_liveMorpho_atomicQueueAsyncRedeem_solverPath() public {
         uint256 flashDepositShares = INestVaultCore(address(forkVault)).previewDeposit(FLASH_LOAN_ASSETS);
         uint256 flashDepositAssets = INestVaultCore(address(forkVault)).previewMint(flashDepositShares);
         uint256 supplyCollateralAssets = seedShares + flashDepositShares;
@@ -456,7 +464,7 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_atomicRequestDriven_legacyAsync_partialDeleverage_withBorrowAccrual()
+    function test_integration_pinnedFork_liveMorpho_atomicRequestDriven_legacyAsync_partialDeleverage_withBorrowAccrual()
         public
     {
         _openLeveragedPositionForRequestDriven();
@@ -500,7 +508,7 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_atomicRequestDriven_legacyAsync_oversizedRequest_skipsAndKeepsRequest()
+    function test_integration_pinnedFork_liveMorpho_atomicRequestDriven_legacyAsync_oversizedRequest_skipsAndKeepsRequest()
         public
     {
         _openLeveragedPositionForRequestDriven();
@@ -528,7 +536,7 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_atomicRequestDriven_legacyAsync_surplusSweptBackToUser() public {
+    function test_integration_pinnedFork_liveMorpho_atomicRequestDriven_legacyAsync_surplusSweptBackToUser() public {
         _openLeveragedPositionForRequestDriven();
 
         uint256 queueOfferShares = _quoteQueueOfferShares(PARTIAL_REPAY_ASSETS);
@@ -557,11 +565,11 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_nestUnlooper_executesValidAtomicRequest() public {
+    function test_integration_pinnedFork_liveMorpho_nestUnlooper_executesValidAtomicRequest() public {
         _assertNestUnlooperExecutes(PARTIAL_REPAY_ASSETS, UNIT / 2, true);
     }
 
-    function test_integration_fork_liveMorpho_nestUnlooper_validRequestSweep() public {
+    function test_integration_pinnedFork_liveMorpho_nestUnlooper_validRequestSweep() public {
         uint256[] memory requestAssets = new uint256[](2);
         requestAssets[0] = 5 * UNIT;
         requestAssets[1] = 30 * UNIT;
@@ -583,16 +591,63 @@ contract NestAdapterIntegrationTest is Test {
         }
     }
 
-    function test_integration_fork_liveMorpho_nestUnlooper_modernAsyncRedeem_targetLeverage() public {
-        _openLeveragedPositionForRequestDriven();
-        uint64 deadline = uint64(block.timestamp + 1 days);
+    function test_integration_pinnedFork_liveMorpho_nestUnlooper_modernAsyncRedeem_targetLeverage() public {
+        _assertModernAsyncRedeemTargetLeverage(10_000, 10_000);
+    }
 
-        vm.prank(user);
-        morpho.setAuthorization(address(nestUnlooper), true);
+    function test_integration_pinnedFork_liveMorpho_nestUnlooper_modernAsyncRedeem_handlesRateAndOracleDrift() public {
+        // Cover aligned downward/upward drift plus favorable divergence where redemption value rises versus oracle.
+        uint16[3] memory accountantRateBps = [uint16(9_900), 10_100, 10_100];
+        uint16[3] memory oraclePriceBps = [uint16(9_900), 9_900, 10_100];
+        uint256 baseSnapshot = vm.snapshotState();
 
-        uint16 targetLeverageBps = uint16(_midTargetLeverageBps(user));
-        vm.prank(user);
-        nestUnlooper.updateUnloopRequest(marketParams, targetLeverageBps, 0, deadline);
+        for (uint256 i; i < accountantRateBps.length; ++i) {
+            vm.revertToState(baseSnapshot);
+            baseSnapshot = vm.snapshotState();
+            vm.clearMockedCalls();
+
+            _assertModernAsyncRedeemTargetLeverage(accountantRateBps[i], oraclePriceBps[i]);
+        }
+    }
+
+    function test_integration_pinnedFork_liveMorpho_nestUnlooper_modernAsyncRedeem_rejectsAdversePriceDivergence()
+        public
+    {
+        (uint64 deadline, uint16 targetLeverageBps) = _storeModernAsyncRedeemTargetLeverageRequest();
+        _applyRateAndOracleDrift(9_900, 10_100);
+
+        vm.expectPartialRevert(NestBundleErrors.OwnerLoanAssetsBelowRequired.selector);
+        nestUnlooper.getAsyncBundle(marketParams, INestVaultCore(address(forkVault)), teller, user, false);
+
+        NestUnlooper.UnloopRequest memory storedRequest = nestUnlooper.getUnloopRequest(user, marketParams);
+        assertEq(storedRequest.leverageBps, targetLeverageBps, "failed request leverage should remain stored");
+        assertEq(storedRequest.deadline, deadline, "failed request deadline should remain stored");
+    }
+
+    function test_integration_latestFork_liveMorpho_nestUnlooper_modernAsyncRedeem_targetLeverage() public {
+        string memory rpcUrl = vm.envOr(PLUME_RPC_ENV, string("https://rpc.plume.org"));
+        vm.createSelectFork(rpcUrl);
+        _setUpIntegrationFixture();
+
+        // This compatibility smoke test assumes a zero-owner-funding unloop. Live oracle and accountant
+        // updates are independent, so price the fixture's oracle 1 bp below the current redemption rate
+        // to keep the success path fundable, including integer-rounding dust.
+        // The pinned drift tests separately cover rejection when redemption proceeds cannot fund repayment.
+        uint256 oneShare = 10 ** uint256(ERC20(NALPHA).decimals());
+        (uint256 assetsPerShare,) = INestVaultCore(address(forkVault)).previewFulfillRedeem(oneShare);
+        uint256 redemptionPrice = Math.mulDiv(assetsPerShare, ORACLE_PRICE_SCALE, oneShare);
+        vm.mockCall(
+            marketParams.oracle,
+            abi.encodeCall(IOracle.price, ()),
+            abi.encode(Math.mulDiv(redemptionPrice, 9_999, 10_000))
+        );
+
+        _assertModernAsyncRedeemTargetLeverage(10_000, 10_000);
+    }
+
+    function _assertModernAsyncRedeemTargetLeverage(uint16 accountantRateBps, uint16 oraclePriceBps) internal {
+        (uint64 deadline, uint16 targetLeverageBps) = _storeModernAsyncRedeemTargetLeverageRequest();
+        _applyRateAndOracleDrift(accountantRateBps, oraclePriceBps);
 
         NestUnlooper.UnloopRequest memory storedRequest = nestUnlooper.getUnloopRequest(user, marketParams);
         assertEq(storedRequest.leverageBps, targetLeverageBps, "stored request leverage mismatch");
@@ -645,7 +700,22 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_liveMorpho_nestUnlooper_modernAsyncRedeem_fullExit() public {
+    function _storeModernAsyncRedeemTargetLeverageRequest()
+        internal
+        returns (uint64 deadline, uint16 targetLeverageBps)
+    {
+        _openLeveragedPositionForRequestDriven();
+        deadline = uint64(block.timestamp + 1 days);
+
+        vm.prank(user);
+        morpho.setAuthorization(address(nestUnlooper), true);
+
+        targetLeverageBps = uint16(_midTargetLeverageBps(user));
+        vm.prank(user);
+        nestUnlooper.updateUnloopRequest(marketParams, targetLeverageBps, 0, deadline);
+    }
+
+    function test_integration_pinnedFork_liveMorpho_nestUnlooper_modernAsyncRedeem_fullExit() public {
         _openLeveragedPositionForRequestDriven();
         uint64 deadline = uint64(block.timestamp + 1 days);
 
@@ -708,7 +778,9 @@ contract NestAdapterIntegrationTest is Test {
         _assertNoAdapterResidualDelta();
     }
 
-    function test_integration_fork_tellerPredicateDeposit_oldProxy_revertsUnauthorizedInitiatorPredicate() public {
+    function test_integration_pinnedFork_tellerPredicateDeposit_oldProxy_revertsUnauthorizedInitiatorPredicate()
+        public
+    {
         uint256 depositAssets = UNIT;
         PredicateMessage memory predicateMsg = _emptyPredicateMessage();
         vm.mockCall(
@@ -747,7 +819,7 @@ contract NestAdapterIntegrationTest is Test {
         bundler3.multicall(increaseBundle);
     }
 
-    function test_integration_fork_tellerPredicateDeposit_oldProxy_succeeds() public {
+    function test_integration_pinnedFork_tellerPredicateDeposit_oldProxy_succeeds() public {
         uint256 depositAssets = UNIT;
         PredicateMessage memory predicateMsg = _emptyPredicateMessage();
 
@@ -1038,21 +1110,18 @@ contract NestAdapterIntegrationTest is Test {
         );
     }
 
-    function _deployPredicateProxy() internal {
-        serviceManager = new MockServiceManager();
-        serviceManager.setIsVerified(true);
+    function _deployComplianceProxy() internal {
+        complianceHook = new MockComplianceHook();
 
-        NestVaultPredicateProxy implementation = new NestVaultPredicateProxy();
+        ComplianceProxy implementation = new ComplianceProxy();
         address proxy = address(
             new TransparentUpgradeableProxy(
                 address(implementation),
                 proxyAdmin,
-                abi.encodeWithSelector(
-                    NestVaultPredicateProxy.initialize.selector, address(this), address(serviceManager), POLICY_ID
-                )
+                abi.encodeCall(ComplianceProxy.initialize, (address(this), IComplianceHook(address(complianceHook))))
             )
         );
-        predicateProxy = NestVaultPredicateProxy(proxy);
+        complianceProxy = ComplianceProxy(proxy);
     }
 
     function _deployForkNestVault() internal {
@@ -1068,7 +1137,7 @@ contract NestAdapterIntegrationTest is Test {
 
         RolesAuthority rolesAuthority = RolesAuthority(address(BoringVault(payable(NALPHA)).authority()));
         forkVault.setAuthority(Authority(address(rolesAuthority)));
-        predicateProxy.setAuthority(Authority(address(rolesAuthority)));
+        complianceProxy.setAuthority(Authority(address(rolesAuthority)));
 
         address rolesOwner = rolesAuthority.owner();
         vm.startPrank(rolesOwner);
@@ -1083,23 +1152,28 @@ contract NestAdapterIntegrationTest is Test {
         rolesAuthority.setPublicCapability(address(forkVault), INestVaultCore.fulfillRedeem.selector, true);
         rolesAuthority.setPublicCapability(address(forkVault), INestVaultCore.updateRedeem.selector, true);
         rolesAuthority.setPublicCapability(
-            address(predicateProxy),
-            bytes4(keccak256("deposit(address,uint256,address,address,(string,uint256,address[],bytes[]))")),
-            true
+            address(complianceProxy), bytes4(keccak256("deposit(address,uint256,address,address,bytes)")), true
         );
         rolesAuthority.setPublicCapability(
-            address(predicateProxy),
-            bytes4(keccak256("mint(address,uint256,address,address,(string,uint256,address[],bytes[]))")),
-            true
+            address(complianceProxy), bytes4(keccak256("mint(address,uint256,address,address,bytes)")), true
         );
-        uint8 predicateProxyAdapterRole = 7;
+        // Role 7 remains required by the live legacy teller compatibility route.
+        rolesAuthority.setUserRole(address(nestAdapter), 7, true);
+
+        uint8 complianceProxyAdapterRole = 16;
         rolesAuthority.setRoleCapability(
-            predicateProxyAdapterRole,
-            address(predicateProxy),
-            bytes4(keccak256("deposit(address,uint256,address,address,bytes32,(string,uint256,address[],bytes[]))")),
+            complianceProxyAdapterRole,
+            address(complianceProxy),
+            bytes4(keccak256("genericUserCheck(address,bytes)")),
             true
         );
-        rolesAuthority.setUserRole(address(nestAdapter), predicateProxyAdapterRole, true);
+        rolesAuthority.setRoleCapability(
+            complianceProxyAdapterRole,
+            address(complianceProxy),
+            bytes4(keccak256("genericUserCheck(address,bytes32,bytes)")),
+            true
+        );
+        rolesAuthority.setUserRole(address(nestAdapter), complianceProxyAdapterRole, true);
         vm.stopPrank();
 
         assertEq(INestVaultCore(address(forkVault)).asset(), PUSD, "forkVault asset mismatch");
@@ -1156,7 +1230,7 @@ contract NestAdapterIntegrationTest is Test {
             bundler: BUNDLER3,
             vault: INestVaultCore(address(forkVault)),
             teller: address(teller),
-            predicateProxy: address(predicateProxy),
+            complianceProxy: address(complianceProxy),
             atomicSolver: address(atomicSolver),
             atomicQueue: address(atomicQueue),
             owner: owner,
@@ -1178,11 +1252,15 @@ contract NestAdapterIntegrationTest is Test {
             target: Position({loan: targetBorrow, collateral: targetCollateral}),
             delta: MarketActions({borrow: 0, flashRepay: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
         });
-        RouteInput memory route =
-            RouteInput({legacyRedemption: legacyRedemption, legacyDeposit: false, instantRedeem: instantRedeem});
+        RouteInput memory route = RouteInput({
+            legacyRedemption: legacyRedemption,
+            legacyDeposit: false,
+            instantRedeem: instantRedeem,
+            compliantRedemption: false
+        });
 
         Bundle memory bundle = BundleBuildLib.getBundle(context, intent, route);
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = bytes("");
         calls = BundleCalldataLib.getBundleCalls(bundle);
     }
 
@@ -1212,6 +1290,25 @@ contract NestAdapterIntegrationTest is Test {
         uint256 delta = currentLeverageBps - 10_000;
         targetLeverageBps = 10_000 + Math.max(delta / 2, 1);
         if (targetLeverageBps >= currentLeverageBps) targetLeverageBps = currentLeverageBps - 1;
+    }
+
+    function _applyRateAndOracleDrift(uint16 accountantRateBps, uint16 oraclePriceBps) internal {
+        if (accountantRateBps != 10_000) {
+            AccountantWithRateProviders accountant = teller.accountant();
+            uint256 currentRate = accountant.getRateInQuoteSafe(ERC20(PUSD));
+            uint256 driftedRate = Math.mulDiv(currentRate, accountantRateBps, 10_000);
+            vm.mockCall(
+                address(accountant),
+                abi.encodeCall(AccountantWithRateProviders.getRateInQuoteSafe, (ERC20(PUSD))),
+                abi.encode(driftedRate)
+            );
+        }
+
+        if (oraclePriceBps != 10_000) {
+            uint256 currentPrice = IOracle(marketParams.oracle).price();
+            uint256 driftedPrice = Math.mulDiv(currentPrice, oraclePriceBps, 10_000);
+            vm.mockCall(marketParams.oracle, abi.encodeCall(IOracle.price, ()), abi.encode(driftedPrice));
+        }
     }
 
     function _seedInstantRedeemLiquidity(uint256 assets) internal {

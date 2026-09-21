@@ -24,9 +24,13 @@ task('lz:oft:solana:getdelegate', 'get delegate')
 
         const { umi } = await deriveConnection(eid)
 
+        const oftStore = publicKey(getSolanaDeployment(eid).oftStore)
+
+        console.log(`Getting delegate for OFT store ${oftStore} on endpoint ${eid}...`)
+
         const res = await oft.getDelegate(
             umi.rpc,
-            publicKey(getSolanaDeployment(eid).oftStore)
+            oftStore
         )
         console.log(res.toString())
     })

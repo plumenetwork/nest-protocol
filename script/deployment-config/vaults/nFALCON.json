@@ -1,5 +1,7 @@
 {
   "symbol": "nFALCON",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+  "ownerOverrides": { "5042": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982" },
   "name": "Nest FalconX CLO",
   "baseAssetSymbol": "USDC",
   "vaultType": "NestVault",
@@ -13,7 +15,7 @@
       {
         "address": "0x4738386D69cf5a7AC088Da2887FC0Df02795c5e7",
         "assetSymbol": "USDC",
-        "chains": [1, 98866],
+        "chains": [1, 98866, 5042],
         "composer": "0xBCAD976d4D40588aAd4a1601e91830c9f0C00648",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000"
@@ -65,8 +67,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-005"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-005"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -74,7 +81,12 @@
   },
 
   "roles": {
-    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],
@@ -91,5 +103,6 @@
     ]
   },
 
-  "peers": [98866, 1, 101]
+  "peerOverrides": { "5042": [98866, 1] },
+  "peers": [98866, 1, 101, 5042]
 }

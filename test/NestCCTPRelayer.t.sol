@@ -17,7 +17,11 @@ import {SendParam, OFTReceipt} from "@layerzerolabs/oft-evm/contracts/interfaces
 import "forge-std/console.sol";
 import {TestHelperOz5} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {
+    TransparentUpgradeableProxy,
+    ITransparentUpgradeableProxy
+} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
 import {MockNestShareOFT} from "test/mock/MockNestShareOFT.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
@@ -30,25 +34,29 @@ import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {NestVault} from "contracts/NestVault.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
-import {NestVaultComposer} from "contracts/ovault/NestVaultComposer.sol";
-import {NestCCTPRelayer} from "contracts/cctp/NestCCTPRelayer.sol";
+import {NestVaultComposer} from "contracts/integrations/ovault/NestVaultComposer.sol";
+import {NestCCTPRelayer} from "contracts/integrations/cctp/NestCCTPRelayer.sol";
 import {MockMintBurnToken} from "test/mock/cctp/MockMintAndBurnToken.sol";
-import {NestVaultPredicateProxy, PredicateMessage} from "contracts/NestVaultPredicateProxy.sol";
-import {MockServiceManager} from "test/mock/MockServiceManager.sol";
+import {PredicateMessage} from "@predicate/src/interfaces/IPredicateClient.sol";
+import {ComplianceProxy} from "contracts/compliance/ComplianceProxy.sol";
+import {IComplianceHook} from "contracts/compliance/interfaces/IComplianceHook.sol";
+import {MockComplianceHook} from "test/mock/MockComplianceHook.sol";
 import {MessageTransmitterV2} from "test/vendor/cctp/MessageTransmitterV2.sol";
 import {TokenMessengerV2} from "test/vendor/cctp/TokenMessengerV2.sol";
 import {TokenMinterV2} from "test/vendor/cctp/TokenMinterV2.sol";
 import {FINALITY_THRESHOLD_FINALIZED} from "test/vendor/cctp/FinalityThresholds.sol";
-import {TypedMemView} from "contracts/libraries/vendor/cctp/TypedMemView.sol";
-import {BurnMessageV2} from "contracts/libraries/vendor/cctp/BurnMessageV2.sol";
-import {AddressUtils} from "contracts/libraries/vendor/cctp/AddressUtils.sol";
-import {MessageV2} from "contracts/libraries/vendor/cctp/MessageV2.sol";
-import {INestVaultComposer} from "contracts/interfaces/ovault/INestVaultComposer.sol";
+import {TypedMemView} from "contracts/vendor/cctp/libraries/TypedMemView.sol";
+import {BurnMessageV2} from "contracts/vendor/cctp/libraries/BurnMessageV2.sol";
+import {AddressUtils} from "contracts/vendor/cctp/libraries/AddressUtils.sol";
+import {MessageV2} from "contracts/vendor/cctp/libraries/MessageV2.sol";
+import {INestVaultComposer} from "contracts/integrations/ovault/interfaces/INestVaultComposer.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 import {IVaultComposerSync} from "@layerzerolabs/ovault-evm/contracts/interfaces/IVaultComposerSync.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
 import {Errors} from "contracts/types/Errors.sol";
-import {VaultComposerAsyncUpgradeable} from "contracts/upgradeable/ovault/VaultComposerAsyncUpgradeable.sol";
+import {Errors as CCTPErrors} from "contracts/integrations/cctp/types/Errors.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
+import {VaultComposerAsyncUpgradeable} from "contracts/vendor/ovault/VaultComposerAsyncUpgradeable.sol";
 
 import "forge-std/console2.sol";
 
@@ -61,7 +69,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     using AddressUtils for address;
     using AddressUtils for bytes32;
 
-    string constant POLICY_ID = "TEST_POLICY_ID";
+    bytes32 private constant ERC1967_ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+    bytes32 private constant CCTP_RELAYER_STORAGE_LOCATION =
+        0x9cb715fddca002bac31d3e28125e9692c952dae06c29708874aa1ab8a9f63300;
 
     uint32 localEid = 1;
     uint32 remoteEid = 2;
@@ -78,8 +88,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     NestVaultComposer nestVaultComposer;
     NestCCTPRelayer nestCCTPRelayer;
 
-    MockServiceManager mockServiceManager;
-    NestVaultPredicateProxy nestVaultPredicateProxy;
+    MockComplianceHook complianceHook;
+    ComplianceProxy complianceProxy;
 
     MockNestVaultOFT nestVaultOFT;
 
@@ -123,12 +133,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         super.setUp();
         setUpEndpoints(2, LibraryType.UltraLightNode);
 
-        // deploy predicate proxy
-        mockServiceManager = new MockServiceManager();
-        // permissive service manager
-        mockServiceManager.setIsVerified(true);
-
-        _deployNestVaultPredicateProxy();
+        // deploy compliance proxy with a permissive hook
+        _deployComplianceProxy();
 
         // deploy nest vault
         _deployNestVaultOFT();
@@ -162,7 +168,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         // set permissive mock authority functions public
         MockAuthority mockAuthority = new MockAuthority(true);
         nestVaultOFT.setAuthority(Authority(address(mockAuthority)));
-        nestVaultPredicateProxy.setAuthority(Authority(address(mockAuthority)));
+        complianceProxy.setAuthority(Authority(address(mockAuthority)));
         nestCCTPRelayer.setAuthority(Authority(address(mockAuthority)));
         nestVaultComposer.setAuthority(Authority(address(mockAuthority)));
 
@@ -206,6 +212,158 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     //     assertEq(remoteNestShare.token(), address(remoteNestShare));
     //     assertEq(nestCCTPRelayer.token(), address(localAsset));
     // }
+
+    function test_send_supportsConfiguredDomainZero() public {
+        uint32 ethereumEid = 30101;
+        uint32 ethereumDomain = 0;
+        uint256 amount = 1e6;
+
+        localTokenMessenger.addRemoteTokenMessenger(ethereumDomain, OFTMsgCodec.addressToBytes32(remoteTokenMessenger));
+        vm.prank(tokenController);
+        localTokenMinter.linkTokenPair(
+            address(localAsset), ethereumDomain, OFTMsgCodec.addressToBytes32(address(remoteAsset))
+        );
+        _setEidToDomain(ethereumEid, ethereumDomain);
+
+        assertEq(nestCCTPRelayer.getEidToDomain(ethereumEid), ethereumDomain);
+        assertEq(nestCCTPRelayer.peers(ethereumEid), OFTMsgCodec.addressToBytes32(remoteTokenMessenger));
+
+        SendParam memory sendParam = SendParam({
+            dstEid: ethereumEid,
+            to: OFTMsgCodec.addressToBytes32(userB),
+            amountLD: amount,
+            minAmountLD: amount,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.startPrank(userA);
+        localAsset.approve(address(nestCCTPRelayer), amount);
+        nestCCTPRelayer.send(sendParam, MessagingFee(0, 0), userA);
+        vm.stopPrank();
+
+        assertEq(localAsset.balanceOf(userA), initialBalance - amount);
+    }
+
+    function test_getEidToDomain_revertsWhenEidIsNotSet() public {
+        vm.expectRevert(CCTPErrors.InvalidDestinationEID.selector);
+        nestCCTPRelayer.getEidToDomain(30_999);
+    }
+
+    function test_peers_returnsZeroWhenEidIsNotSet() public view {
+        assertEq(nestCCTPRelayer.peers(30_999), bytes32(0));
+    }
+
+    function test_send_revertsWhenEidIsNotSet() public {
+        uint256 amount = 1e6;
+        SendParam memory sendParam = SendParam({
+            dstEid: 30_999,
+            to: addressToBytes32(userB),
+            amountLD: amount,
+            minAmountLD: amount,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.startPrank(userA);
+        localAsset.approve(address(nestCCTPRelayer), amount);
+        vm.expectRevert(CCTPErrors.InvalidDestinationEID.selector);
+        nestCCTPRelayer.send(sendParam, MessagingFee(0, 0), userA);
+        vm.stopPrank();
+    }
+
+    function test_redeemAndSend_local_succeedsWithoutLocalEidMapping() public {
+        uint256 shareAmount = 1e6;
+        uint256 receiverBalanceBefore = localAsset.balanceOf(userB);
+
+        vm.store(address(nestCCTPRelayer), _eidToDomainSlot(localEid), bytes32(0));
+
+        SendParam memory sendParam = SendParam({
+            dstEid: localEid,
+            to: addressToBytes32(userB),
+            amountLD: 0,
+            minAmountLD: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: abi.encode(VaultComposerAsyncUpgradeable.RedeemType.InstantRedeem)
+        });
+
+        vm.startPrank(userA);
+        nestShare.approve(address(nestVaultComposer), shareAmount);
+        nestVaultComposer.redeemAndSend(shareAmount, sendParam, userA);
+        vm.stopPrank();
+
+        assertGt(localAsset.balanceOf(userB), receiverBalanceBefore);
+    }
+
+    function test_setComposer_disableSkipsMetadataChecks() public {
+        address composer = address(nestVaultComposer);
+
+        assertTrue(nestCCTPRelayer.isComposer(composer));
+        assertEq(localAsset.allowance(address(nestCCTPRelayer), composer), type(uint256).max);
+
+        vm.mockCallRevert(
+            composer,
+            abi.encodeWithSignature("ASSET_OFT()"),
+            abi.encodeWithSignature("Error(string)", "composer getter reverted")
+        );
+        vm.mockCallRevert(
+            composer,
+            abi.encodeWithSignature("ASSET_ERC20()"),
+            abi.encodeWithSignature("Error(string)", "composer getter reverted")
+        );
+
+        nestCCTPRelayer.setComposer(composer, false);
+
+        assertFalse(nestCCTPRelayer.isComposer(composer));
+        assertEq(localAsset.allowance(address(nestCCTPRelayer), composer), 0);
+    }
+
+    function test_setEidToDomain_requiresAuth() public {
+        nestCCTPRelayer.setAuthority(Authority(address(0)));
+
+        uint32[] memory eids = new uint32[](1);
+        uint32[] memory domains = new uint32[](1);
+
+        vm.prank(userA);
+        vm.expectRevert(AuthUpgradeable.AUTH_UNAUTHORIZED.selector);
+        nestCCTPRelayer.setEidToDomain(eids, domains);
+    }
+
+    function test_upgrade_remapsExistingEidDomains() public {
+        uint32 ethereumEid = 30_101;
+
+        // Recreate legacy raw storage, including the incorrect Ethereum domain value.
+        vm.store(address(nestCCTPRelayer), _eidToDomainSlot(ethereumEid), bytes32(uint256(5)));
+        vm.store(address(nestCCTPRelayer), _eidToDomainSlot(remoteEid), bytes32(uint256(remoteDomain)));
+
+        uint32[] memory eids = new uint32[](2);
+        eids[0] = ethereumEid;
+        eids[1] = remoteEid;
+        uint32[] memory domains = new uint32[](2);
+        domains[0] = 0;
+        domains[1] = remoteDomain;
+
+        NestCCTPRelayer newImplementation = new NestCCTPRelayer(
+            address(localMessageTransmitter),
+            address(localTokenMessenger),
+            address(endpoints[localEid]),
+            address(localAsset)
+        );
+        address admin = address(uint160(uint256(vm.load(address(nestCCTPRelayer), ERC1967_ADMIN_SLOT))));
+
+        vm.prank(proxyAdmin);
+        ProxyAdmin(admin)
+            .upgradeAndCall(ITransparentUpgradeableProxy(address(nestCCTPRelayer)), address(newImplementation), "");
+        nestCCTPRelayer.setEidToDomain(eids, domains);
+
+        assertEq(nestCCTPRelayer.getEidToDomain(ethereumEid), 0);
+        assertEq(nestCCTPRelayer.getEidToDomain(remoteEid), remoteDomain);
+        assertEq(uint256(vm.load(address(nestCCTPRelayer), _eidToDomainSlot(ethereumEid))), 1);
+        assertEq(uint256(vm.load(address(nestCCTPRelayer), _eidToDomainSlot(remoteEid))), remoteDomain + 1);
+    }
 
     function test_deposit() public {
         uint256 _depositAmount = 1e6;
@@ -263,7 +421,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         console2.log("nestShare", address(nestShare));
         console2.log("remoteNestShare", address(remoteNestShare));
         console2.log("nestVaultOFT", address(nestVaultOFT));
-        console2.log("nestVaultPredicateProxy", address(nestVaultPredicateProxy));
+        console2.log("complianceProxy", address(complianceProxy));
 
         // receive message (_receiveMessage)
         _receiveMessage(_message, _attestation, _predicateMsg, address(relayer));
@@ -2946,7 +3104,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     }
 
     function test_initialize_revert_ZERO_ADDRESS() public {
-        address impl = address(new NestVaultComposer(address(nestVaultPredicateProxy)));
+        address impl = address(new NestVaultComposer(address(complianceProxy)));
         bytes memory initData = abi.encodeWithSelector(
             NestVaultComposer.initialize.selector,
             address(0),
@@ -2965,10 +3123,9 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
             _formatPredicateMessage("test", block.timestamp + 1 days, new address[](0), new bytes[](0));
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
 
-        bytes4 depositSelector =
-            bytes4(keccak256("deposit(address,uint256,address,address,bytes32,(string,uint256,address[],bytes[]))"));
+        bytes4 depositSelector = ComplianceProxy.depositOnBehalf.selector;
         vm.mockCallRevert(
-            address(nestVaultPredicateProxy),
+            address(complianceProxy),
             abi.encodeWithSelector(depositSelector),
             abi.encodeWithSelector(Errors.ZeroShares.selector)
         );
@@ -3034,19 +3191,18 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
         uint256 amount = 1e6;
 
-        // Force the predicate deposit to revert with ZERO_SHARES so lzCompose triggers the refund path
-        bytes4 depositSelector =
-            bytes4(keccak256("deposit(address,uint256,address,address,bytes32,(string,uint256,address[],bytes[]))"));
+        // Force the compliance deposit to revert with ZERO_SHARES so lzCompose triggers the refund path
+        bytes4 depositSelector = ComplianceProxy.depositOnBehalf.selector;
         vm.mockCallRevert(
-            address(nestVaultPredicateProxy),
+            address(complianceProxy),
             abi.encodeWithSelector(depositSelector),
             abi.encodeWithSelector(Errors.ZeroShares.selector)
         );
 
-        // Fund composer and approve predicate proxy so deposit can proceed
+        // Fund composer and approve compliance proxy so deposit can proceed
         localAsset.mint(address(nestVaultComposer), amount);
         vm.prank(address(nestVaultComposer));
-        localAsset.approve(address(nestVaultPredicateProxy), type(uint256).max);
+        localAsset.approve(address(complianceProxy), type(uint256).max);
 
         SendParam memory sendParam = SendParam({
             dstEid: remoteEid,
@@ -3065,7 +3221,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         bytes memory composerMsg = OFTComposeMsgCodec.encode(
             1, // nonce
             remoteEid,
-            amount, // amount received; predicate deposit is mocked to revert to force refund path
+            amount, // amount received; compliance deposit is mocked to revert to force refund path
             abi.encodePacked(addressToBytes32(address(userA)), composeMsg)
         );
 
@@ -3201,7 +3357,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     }
 
     /// @notice Test fulfillRedeem reverts when vault returns zero assets
-    function test_fulfill_redeem_revert_ZERO_ASSETS() public {
+    function test_fulfill_redeem_revert_ZERO_ASSETS() public pure {
         // This test requires mocking the vault to return 0 assets
         // For now, we can verify the error exists by checking the error selector
         // A proper test would require a mock vault that returns 0 on fulfillRedeem
@@ -3453,7 +3609,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     }
 
     /// @notice Test quoteSend for asset OFT (redeem quote)
-    function test_quoteSend_assetOFT() public {
+    function test_quoteSend_assetOFT() public view {
         // Setup: give the composer some shares to redeem
         uint256 shareAmount = 1e6;
 
@@ -3477,7 +3633,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
     }
 
     /// @notice Test quoteSend for share OFT (deposit quote)
-    function test_quoteSend_shareOFT() public {
+    function test_quoteSend_shareOFT() public view {
         uint256 assetAmount = 1e6;
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
@@ -4203,11 +4359,11 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
 
     function _deployMockNestShareOFT() internal {
         remoteNestShare = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[remoteEid])),
-                abi.encodeWithSelector(NestShareOFT.initialize.selector, "Nest Test Vault", "nTEST", address(this))
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[remoteEid])),
+                    abi.encodeWithSelector(NestShareOFT.initialize.selector, "Nest Test Vault", "nTEST", address(this))
+                ))
         );
     }
 
@@ -4229,15 +4385,13 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         );
     }
 
-    function _deployNestVaultPredicateProxy() internal {
-        // deploy nest vault predicate proxy
-        nestVaultPredicateProxy = NestVaultPredicateProxy(
+    function _deployComplianceProxy() internal {
+        complianceHook = new MockComplianceHook();
+        complianceProxy = ComplianceProxy(
             _deployContractAndProxy(
-                type(NestVaultPredicateProxy).creationCode,
+                type(ComplianceProxy).creationCode,
                 bytes(""),
-                abi.encodeWithSelector(
-                    NestVaultPredicateProxy.initialize.selector, address(this), address(mockServiceManager), POLICY_ID
-                )
+                abi.encodeCall(ComplianceProxy.initialize, (address(this), IComplianceHook(address(complianceHook))))
             )
         );
     }
@@ -4247,7 +4401,7 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         nestVaultComposer = NestVaultComposer(
             payable(_deployContractAndProxy(
                     type(NestVaultComposer).creationCode,
-                    abi.encode(address(nestVaultPredicateProxy)),
+                    abi.encode(address(complianceProxy)),
                     abi.encodeWithSelector(
                         NestVaultComposer.initialize.selector,
                         address(this),
@@ -4283,8 +4437,8 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         nestCCTPRelayer.setComposer(address(nestVaultComposer), true);
 
         // set eid to domain (peers() derives from CCTP's remoteTokenMessengers for these domains)
-        nestCCTPRelayer.setEidToDomain(localEid, localDomain);
-        nestCCTPRelayer.setEidToDomain(remoteEid, remoteDomain);
+        _setEidToDomain(localEid, localDomain);
+        _setEidToDomain(remoteEid, remoteDomain);
 
         // set finality threshold
         nestCCTPRelayer.setFinalityThreshold(2000);
@@ -4389,5 +4543,17 @@ contract NestCCTPRelayerTest is TestHelperOz5 {
         }
 
         return address(new TransparentUpgradeableProxy(addr, proxyAdmin, _initializeArgs));
+    }
+
+    function _eidToDomainSlot(uint32 eid) internal pure returns (bytes32) {
+        return keccak256(abi.encode(eid, uint256(CCTP_RELAYER_STORAGE_LOCATION) + 2));
+    }
+
+    function _setEidToDomain(uint32 eid, uint32 domain) internal {
+        uint32[] memory eids = new uint32[](1);
+        eids[0] = eid;
+        uint32[] memory domains = new uint32[](1);
+        domains[0] = domain;
+        nestCCTPRelayer.setEidToDomain(eids, domains);
     }
 }

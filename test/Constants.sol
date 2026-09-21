@@ -2,6 +2,25 @@
 pragma solidity >=0.8.0;
 
 contract Constants {
+    // Solmate RolesAuthority role ids (mirror script/lib/Constants.sol). Referenced by the deployment
+    // state/fork tests for capability and role-membership assertions.
+    uint8 constant OWNER_ROLE = 0;
+    uint8 constant STRATEGIST_ROLE = 1;
+    uint8 constant MANAGER_ROLE = 2;
+    uint8 constant TELLER_ROLE = 3;
+    uint8 constant UPDATE_EXCHANGE_RATE_ROLE = 4;
+    uint8 constant SOLVER_ROLE = 5;
+    uint8 constant PAUSER_ROLE = 6;
+    uint8 constant PREDICATE_PROXY_ROLE = 7;
+    uint8 constant DEPOSITOR_ROLE = 8;
+    uint8 constant QUEUE_ROLE = 10;
+    uint8 constant CAN_SOLVE_ROLE = 11;
+    uint8 constant COMPOSER_ROLE = 12;
+    uint8 constant RELAYER_ROLE = 13;
+    uint8 constant KEEPER_ROLE = 14;
+    uint8 constant SEIZER_ROLE = 15;
+    uint8 constant COMPLIANCE_PROXY_ROLE = 16;
+
     // Nest Constants
     address payable public constant NALPHA = payable(0x593cCcA4c4bf58b7526a4C164cEEf4003C6388db);
     address public constant NALPHA_TELLER = 0xc9F6a492Fb1D623690Dc065BBcEd6DfB4a324A35;

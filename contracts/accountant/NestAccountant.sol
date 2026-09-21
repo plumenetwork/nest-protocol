@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 // contracts
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
 
@@ -13,7 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IRateProvider} from "contracts/interfaces/IRateProvider.sol";
 
 // libraries
-import {NestVaultAccountingLogic} from "contracts/libraries/nest-vault/NestVaultAccountingLogic.sol";
+import {NestVaultAccountingLogic} from "contracts/libraries/NestVaultAccountingLogic.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {FixedPointMathLib} from "@solmate/utils/FixedPointMathLib.sol";
@@ -236,7 +236,7 @@ contract NestAccountant is Initializable, AuthUpgradeable {
     /// @dev    This version is used to track contract upgrades.
     /// @return string A string representing the version of the contract.
     function version() public pure returns (string memory) {
-        return "1.1.0";
+        return "1.1.1";
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -596,7 +596,8 @@ contract NestAccountant is Initializable, AuthUpgradeable {
         uint256 _shareSupplyToUse = Math.min(uint256(accountantState.totalSharesLastUpdate), _currentTotalShares);
         uint256 _rateToAccrueOn = Math.min(uint256(accountantState.exchangeRate), _newExchangeRate);
 
-        uint256 _assets = _shareSupplyToUse.convertToAssets(_rateToAccrueOn, NestShareOFT(SHARE), Math.Rounding.Floor);
+        uint256 _assets =
+            _shareSupplyToUse.convertToAssets(_rateToAccrueOn, NestShareOFT(payable(SHARE)), Math.Rounding.Floor);
         uint256 _managementFeesAnnual = _assets.mulDivDown(accountantState.managementFee, DENOMINATOR);
 
         uint256 _feesOwedInBase = uint256(accountantState.feesOwedInBase);

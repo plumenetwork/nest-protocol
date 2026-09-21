@@ -1,25 +1,26 @@
 {
   "symbol": "nGRVT1",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
   "name": "Nest Grvt Balanced Vault",
   "baseAssetSymbol": "USDC",
   "vaultType": "NestVault",
   "accountantType": "NestHubAccountant",
 
   "contracts": {
-    "share": "0x0000000000000000000000000000000000000000",
-    "accountant": "0x0000000000000000000000000000000000000000",
-    "rolesAuthority": "0x0000000000000000000000000000000000000000",
+    "share": "0x600384E24e8edBc86bF7BF9AFf4De429aD5F2598",
+    "accountant": "0xa13e9A29e9DdA6Dd8Df1c61D5dFb52E676348281",
+    "rolesAuthority": "0x7d7d8317790dAbD6965Ef839e36063B20171035c",
     "vaults": [
       {
-        "address": "0x0000000000000000000000000000000000000000",
+        "address": "0x2289AE78045580Aabb8CFdBdB6e68FC3570cfcCe",
         "assetSymbol": "USDC",
         "chains": [1, 98866],
-        "composer": "0x0000000000000000000000000000000000000000",
+        "composer": "0x0bE8F41E52A017624cBC3B39407e4dD96FD75657",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000"
       },
       {
-        "address": "0x0000000000000000000000000000000000000000",
+        "address": "0x3b132f7dFCb7607B570D4cd864A7bF416893BEaF",
         "assetSymbol": "USDT",
         "chains": [1],
         "composer": "0x0000000000000000000000000000000000000000",
@@ -27,7 +28,7 @@
         "rateProvider": "0x0000000000000000000000000000000000000000"
       },
       {
-        "address": "0x0000000000000000000000000000000000000000",
+        "address": "0xa5057A1dbb066c41902efD3539206583Fdc72F74",
         "assetSymbol": "pUSD",
         "chains": [98866],
         "composer": "0x0000000000000000000000000000000000000000",
@@ -73,8 +74,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -82,7 +88,12 @@
   },
 
   "roles": {
-    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],

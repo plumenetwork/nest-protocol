@@ -4,9 +4,9 @@ pragma solidity ^0.8.30;
 import {Test} from "forge-std/Test.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-import {Constants} from "script/Constants.sol";
+import {Constants} from "test/Constants.sol";
 import {NestSpokeAccountant} from "contracts/accountant/NestSpokeAccountant.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 
 import {Errors} from "contracts/types/Errors.sol";

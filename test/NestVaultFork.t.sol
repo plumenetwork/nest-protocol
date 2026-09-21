@@ -11,7 +11,7 @@ import {ISignatureTransfer} from "@uniswap/permit2/interfaces/ISignatureTransfer
 
 // contracts
 import {NestVault} from "contracts/NestVault.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {BoringVault} from "@boring-vault/src/base/BoringVault.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
@@ -26,7 +26,7 @@ import {Events} from "test/Events.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {FixedPointMathLib} from "@solmate/utils/FixedPointMathLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
 
 /// @title NestVaultForkTest
 /// @dev This contract contains various test functions to validate the functionality of the NestVault contract.

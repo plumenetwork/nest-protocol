@@ -14,7 +14,7 @@ import {MockAuthority} from "test/mock/MockAuthority.sol";
 import {ERC20Mock} from "@layerzerolabs/oft-evm-upgradeable/test/mocks/ERC20Mock.sol";
 import {RolesAuthority} from "@solmate/auth/authorities/RolesAuthority.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
@@ -117,11 +117,11 @@ contract NestVaultRedeemOperatorTest is TestHelperOz5 {
         asset = new ERC20Mock("Asset", "AST");
 
         share = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[LOCAL_EID])),
-                abi.encodeCall(NestShareOFT.initialize, ("Share", "SHARE", address(this), address(this)))
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[LOCAL_EID])),
+                    abi.encodeCall(NestShareOFT.initialize, ("Share", "SHARE", address(this), address(this)))
+                ))
         );
 
         vault = MockNestVault(

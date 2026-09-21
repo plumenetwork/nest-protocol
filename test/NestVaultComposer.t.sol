@@ -20,10 +20,11 @@ import {NestVaultOFT} from "contracts/NestVaultOFT.sol";
 import {MockBoringVault} from "test/mock/MockBoringVault.sol";
 import {MockRateProvider} from "test/mock/MockRateProvider.sol";
 import {MockAuthority} from "test/mock/MockAuthority.sol";
-import {MockServiceManager} from "test/mock/MockServiceManager.sol";
-import {NestVaultPredicateProxy, PredicateMessage} from "contracts/NestVaultPredicateProxy.sol";
-import {NestVaultComposer} from "contracts/ovault/NestVaultComposer.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {MockComplianceHook} from "test/mock/MockComplianceHook.sol";
+import {ComplianceProxy} from "contracts/compliance/ComplianceProxy.sol";
+import {IComplianceHook} from "contracts/compliance/interfaces/IComplianceHook.sol";
+import {NestVaultComposer} from "contracts/integrations/ovault/NestVaultComposer.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 
@@ -46,27 +47,19 @@ abstract contract NestVaultComposerTestBase is TestHelperOz5 {
         return address(new TransparentUpgradeableProxy(addr, proxyAdmin, _initializeArgs));
     }
 
-    function _formatPredicateMessage(
-        string memory _taskId,
-        uint256 _expireByTime,
-        address[] memory _signerAddresses,
-        bytes[] memory _signatures
-    ) internal pure returns (bytes memory _message) {
-        PredicateMessage memory _msg = PredicateMessage({
-            taskId: _taskId, expireByTime: _expireByTime, signerAddresses: _signerAddresses, signatures: _signatures
-        });
-
-        _message = abi.encode(_msg);
+    function _complianceData() internal pure returns (bytes memory) {
+        return hex"deadbeef";
     }
 }
 
-contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
+abstract contract NestVaultComposerNestShareOFTTestBase is NestVaultComposerTestBase {
     using OptionsBuilder for bytes;
+
+    bytes32 internal constant INITIALIZABLE_STORAGE =
+        0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
 
     uint32 internal constant LOCAL_EID = 1;
     uint32 internal constant REMOTE_EID = 2;
-    string internal constant POLICY_ID = "TEST_POLICY_ID";
-
     MockRateProvider internal accountant;
     MockMintBurnToken internal asset;
     OFTAdapterUpgradeableMock internal assetOFT;
@@ -74,8 +67,8 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
     MockNestShareOFT internal remoteShareOFT;
     MockNestVault internal vault;
     NestVaultComposer internal composer;
-    NestVaultPredicateProxy internal predicateProxy;
-    MockServiceManager internal serviceManager;
+    ComplianceProxy internal complianceProxy;
+    MockComplianceHook internal complianceHook;
     MockAuthority internal mockAuthority;
 
     address internal userA = makeAddr("userA");
@@ -96,23 +89,23 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         proxyAdmin = makeAddr("proxyAdmin");
 
         shareOFT = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[LOCAL_EID])),
-                abi.encodeWithSelector(
-                    NestShareOFT.initialize.selector, "Nest Share", "nSHARE", address(this), address(this)
-                )
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[LOCAL_EID])),
+                    abi.encodeWithSelector(
+                        NestShareOFT.initialize.selector, "Nest Share", "nSHARE", address(this), address(this)
+                    )
+                ))
         );
 
         remoteShareOFT = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[REMOTE_EID])),
-                abi.encodeWithSelector(
-                    NestShareOFT.initialize.selector, "Nest Share", "nSHARE", address(this), address(this)
-                )
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[REMOTE_EID])),
+                    abi.encodeWithSelector(
+                        NestShareOFT.initialize.selector, "Nest Share", "nSHARE", address(this), address(this)
+                    )
+                ))
         );
 
         vault = MockNestVault(
@@ -133,23 +126,19 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
             )
         );
 
-        serviceManager = new MockServiceManager();
-        serviceManager.setIsVerified(true);
-
-        predicateProxy = NestVaultPredicateProxy(
+        complianceHook = new MockComplianceHook();
+        complianceProxy = ComplianceProxy(
             _deployContractAndProxy(
-                type(NestVaultPredicateProxy).creationCode,
+                type(ComplianceProxy).creationCode,
                 bytes(""),
-                abi.encodeWithSelector(
-                    NestVaultPredicateProxy.initialize.selector, address(this), address(serviceManager), POLICY_ID
-                )
+                abi.encodeCall(ComplianceProxy.initialize, (address(this), IComplianceHook(address(complianceHook))))
             )
         );
 
         composer = NestVaultComposer(
             payable(_deployContractAndProxy(
                     type(NestVaultComposer).creationCode,
-                    abi.encode(address(predicateProxy)),
+                    abi.encode(address(complianceProxy)),
                     abi.encodeWithSelector(
                         NestVaultComposer.initialize.selector,
                         address(this),
@@ -165,7 +154,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         shareOFT.setAuthority(Authority(address(mockAuthority)));
         remoteShareOFT.setAuthority(Authority(address(mockAuthority)));
         vault.setAuthority(Authority(address(mockAuthority)));
-        predicateProxy.setAuthority(Authority(address(mockAuthority)));
+        complianceProxy.setAuthority(Authority(address(mockAuthority)));
         composer.setAuthority(Authority(address(mockAuthority)));
 
         address[] memory ofts = new address[](2);
@@ -173,6 +162,10 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         ofts[1] = address(remoteShareOFT);
         this.wireOApps(ofts);
     }
+}
+
+contract NestVaultComposerNestShareOFTTest is NestVaultComposerNestShareOFTTestBase {
+    using OptionsBuilder for bytes;
 
     function test_unit_initialize_setsShareVaultApproval_whenShareOftIsNestShareOFT() public view {
         uint256 max = type(uint256).max;
@@ -180,11 +173,17 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         assertEq(composer.SHARE_OFT(), address(shareOFT));
         assertTrue(composer.SHARE_OFT() != address(vault));
 
-        assertEq(IERC20(address(asset)).allowance(address(composer), address(predicateProxy)), max);
+        assertEq(IERC20(address(asset)).allowance(address(composer), address(complianceProxy)), max);
         assertEq(IERC20(address(asset)).allowance(address(composer), address(vault)), max);
         assertEq(IERC20(address(asset)).allowance(address(composer), address(assetOFT)), max);
         assertEq(IERC20(address(shareOFT)).allowance(address(composer), address(vault)), max);
         assertFalse(IOFT(address(shareOFT)).approvalRequired());
+    }
+
+    function test_freshComposer_hasNoComplianceReinitializer() public {
+        (bool success,) = address(composer).call(abi.encodeWithSignature("initializeComplianceProxy()"));
+        assertFalse(success);
+        assertEq(uint256(vm.load(address(composer), INITIALIZABLE_STORAGE)), 1);
     }
 
     function test_integration_depositAndSend_local_mintsShares() public {
@@ -195,7 +194,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         vm.prank(userA);
         asset.approve(address(composer), depositAmount);
 
-        bytes memory predicateMsg = _formatPredicateMessage("", 0, new address[](0), new bytes[](0));
+        bytes memory complianceData = _complianceData();
 
         SendParam memory sendParam = SendParam({
             dstEid: composer.VAULT_EID(),
@@ -204,7 +203,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
             minAmountLD: 0,
             extraOptions: new bytes(0),
             composeMsg: new bytes(0),
-            oftCmd: predicateMsg
+            oftCmd: complianceData
         });
 
         uint256 expectedShares = vault.previewDeposit(depositAmount);
@@ -213,6 +212,9 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         composer.depositAndSend(addressToBytes32(userA), depositAmount, sendParam, userA);
 
         assertEq(shareOFT.balanceOf(userB), expectedShares);
+        assertEq(complianceHook.lastSender(), address(composer));
+        assertEq(complianceHook.lastPayload(), abi.encodeWithSignature("deposit(bytes32)", addressToBytes32(userA)));
+        assertEq(complianceHook.lastComplianceData(), complianceData);
     }
 
     function test_integration_depositAndSend_remote_bridgesShares_withNestShareOFT() public {
@@ -223,7 +225,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         vm.prank(userA);
         asset.approve(address(composer), depositAmount);
 
-        bytes memory predicateMsg = _formatPredicateMessage("", 0, new address[](0), new bytes[](0));
+        bytes memory complianceData = _complianceData();
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         uint256 expectedShares = vault.previewDeposit(depositAmount);
 
@@ -234,7 +236,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
             minAmountLD: expectedShares,
             extraOptions: options,
             composeMsg: new bytes(0),
-            oftCmd: predicateMsg
+            oftCmd: complianceData
         });
 
         SendParam memory quoteParam = sendParam;
@@ -258,7 +260,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
         vm.prank(userA);
         asset.approve(address(composer), depositAmount);
 
-        bytes memory predicateMsg = _formatPredicateMessage("", 0, new address[](0), new bytes[](0));
+        bytes memory complianceData = _complianceData();
         uint256 expectedShares = vault.previewDeposit(depositAmount);
 
         SendParam memory sendParam = SendParam({
@@ -268,7 +270,7 @@ contract NestVaultComposerNestShareOFTTest is NestVaultComposerTestBase {
             minAmountLD: expectedShares + 1,
             extraOptions: new bytes(0),
             composeMsg: new bytes(0),
-            oftCmd: predicateMsg
+            oftCmd: complianceData
         });
 
         vm.prank(userA);
@@ -315,8 +317,6 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
 
     uint32 internal constant LOCAL_EID = 1;
     uint32 internal constant REMOTE_EID = 2;
-    string internal constant POLICY_ID = "TEST_POLICY_ID";
-
     MockRateProvider internal accountant;
     MockMintBurnToken internal asset;
     OFTAdapterUpgradeableMock internal assetOFT;
@@ -325,8 +325,8 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
     MockNestVaultOFT internal vaultOFT;
     MockNestVaultOFT internal remoteVaultOFT;
     NestVaultComposer internal composer;
-    NestVaultPredicateProxy internal predicateProxy;
-    MockServiceManager internal serviceManager;
+    ComplianceProxy internal complianceProxy;
+    MockComplianceHook internal complianceHook;
     MockAuthority internal mockAuthority;
 
     address internal userA = makeAddr("userA");
@@ -389,23 +389,19 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
             )
         );
 
-        serviceManager = new MockServiceManager();
-        serviceManager.setIsVerified(true);
-
-        predicateProxy = NestVaultPredicateProxy(
+        complianceHook = new MockComplianceHook();
+        complianceProxy = ComplianceProxy(
             _deployContractAndProxy(
-                type(NestVaultPredicateProxy).creationCode,
+                type(ComplianceProxy).creationCode,
                 bytes(""),
-                abi.encodeWithSelector(
-                    NestVaultPredicateProxy.initialize.selector, address(this), address(serviceManager), POLICY_ID
-                )
+                abi.encodeCall(ComplianceProxy.initialize, (address(this), IComplianceHook(address(complianceHook))))
             )
         );
 
         composer = NestVaultComposer(
             payable(_deployContractAndProxy(
                     type(NestVaultComposer).creationCode,
-                    abi.encode(address(predicateProxy)),
+                    abi.encode(address(complianceProxy)),
                     abi.encodeWithSelector(
                         NestVaultComposer.initialize.selector,
                         address(this),
@@ -419,7 +415,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
 
         mockAuthority = new MockAuthority(true);
         vaultOFT.setAuthority(Authority(address(mockAuthority)));
-        predicateProxy.setAuthority(Authority(address(mockAuthority)));
+        complianceProxy.setAuthority(Authority(address(mockAuthority)));
         composer.setAuthority(Authority(address(mockAuthority)));
 
         address[] memory ofts = new address[](2);
@@ -436,7 +432,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
         address shareToken = IOFT(address(vaultOFT)).token();
         assertEq(IERC20(shareToken).allowance(address(composer), address(vaultOFT)), max);
 
-        assertEq(IERC20(address(asset)).allowance(address(composer), address(predicateProxy)), max);
+        assertEq(IERC20(address(asset)).allowance(address(composer), address(complianceProxy)), max);
         assertEq(IERC20(address(asset)).allowance(address(composer), address(vaultOFT)), max);
         assertEq(IERC20(address(asset)).allowance(address(composer), address(assetOFT)), max);
     }
@@ -480,7 +476,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
         vm.prank(userA);
         asset.approve(address(composer), depositAmount);
 
-        bytes memory predicateMsg = _formatPredicateMessage("", 0, new address[](0), new bytes[](0));
+        bytes memory complianceData = _complianceData();
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         uint256 expectedShares = vaultOFT.previewDeposit(depositAmount);
 
@@ -491,7 +487,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
             minAmountLD: expectedShares,
             extraOptions: options,
             composeMsg: new bytes(0),
-            oftCmd: predicateMsg
+            oftCmd: complianceData
         });
 
         SendParam memory quoteParam = sendParam;
@@ -515,7 +511,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
         vm.prank(userA);
         asset.approve(address(composer), depositAmount);
 
-        bytes memory predicateMsg = _formatPredicateMessage("", 0, new address[](0), new bytes[](0));
+        bytes memory complianceData = _complianceData();
         uint256 expectedShares = vaultOFT.previewDeposit(depositAmount);
 
         SendParam memory sendParam = SendParam({
@@ -525,7 +521,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
             minAmountLD: expectedShares + 1,
             extraOptions: new bytes(0),
             composeMsg: new bytes(0),
-            oftCmd: predicateMsg
+            oftCmd: complianceData
         });
 
         vm.prank(userA);
@@ -539,7 +535,7 @@ contract NestVaultComposerNestVaultOFTTest is NestVaultComposerTestBase {
 /// @dev Harness exposing the compose-only `_requestRedeem` so a pending bucket can be seeded directly.
 ///      Everything under test (`_updateRequestRedeemAndSend`, `_fulfillRedeem`) is the inherited code.
 contract HarnessComposer is NestVaultComposer {
-    constructor(address _predicateProxy) NestVaultComposer(_predicateProxy) {}
+    constructor(address _complianceProxy) NestVaultComposer(_complianceProxy) {}
 
     function harnessRequestRedeem(uint32 _srcEid, bytes32 _redeemer, bytes32 _receiver, uint256 _shares) external {
         SendParam memory sp;
@@ -554,7 +550,6 @@ contract HarnessComposer is NestVaultComposer {
 ///         composer fulfilment keeps working afterward.
 contract NestVaultComposerAsyncSkewTest is NestVaultComposerTestBase {
     uint32 internal constant LOCAL_EID = 1;
-    string internal constant POLICY_ID = "TEST_POLICY_ID";
 
     MockRateProvider internal accountant;
     MockMintBurnToken internal asset;
@@ -562,8 +557,8 @@ contract NestVaultComposerAsyncSkewTest is NestVaultComposerTestBase {
     MockNestShareOFT internal shareOFT;
     MockNestVault internal vault;
     HarnessComposer internal composer;
-    NestVaultPredicateProxy internal predicateProxy;
-    MockServiceManager internal serviceManager;
+    ComplianceProxy internal complianceProxy;
+    MockComplianceHook internal complianceHook;
     MockAuthority internal mockAuthority;
 
     address internal userA = makeAddr("userA");
@@ -586,13 +581,13 @@ contract NestVaultComposerAsyncSkewTest is NestVaultComposerTestBase {
         proxyAdmin = makeAddr("proxyAdmin");
 
         shareOFT = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[LOCAL_EID])),
-                abi.encodeWithSelector(
-                    NestShareOFT.initialize.selector, "Nest Share", "nSHARE", address(this), address(this)
-                )
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[LOCAL_EID])),
+                    abi.encodeWithSelector(
+                        NestShareOFT.initialize.selector, "Nest Share", "nSHARE", address(this), address(this)
+                    )
+                ))
         );
 
         vault = MockNestVault(
@@ -613,23 +608,19 @@ contract NestVaultComposerAsyncSkewTest is NestVaultComposerTestBase {
             )
         );
 
-        serviceManager = new MockServiceManager();
-        serviceManager.setIsVerified(true);
-
-        predicateProxy = NestVaultPredicateProxy(
+        complianceHook = new MockComplianceHook();
+        complianceProxy = ComplianceProxy(
             _deployContractAndProxy(
-                type(NestVaultPredicateProxy).creationCode,
+                type(ComplianceProxy).creationCode,
                 bytes(""),
-                abi.encodeWithSelector(
-                    NestVaultPredicateProxy.initialize.selector, address(this), address(serviceManager), POLICY_ID
-                )
+                abi.encodeCall(ComplianceProxy.initialize, (address(this), IComplianceHook(address(complianceHook))))
             )
         );
 
         composer = HarnessComposer(
             payable(_deployContractAndProxy(
                     type(HarnessComposer).creationCode,
-                    abi.encode(address(predicateProxy)),
+                    abi.encode(address(complianceProxy)),
                     abi.encodeWithSelector(
                         NestVaultComposer.initialize.selector,
                         address(this),
@@ -644,7 +635,7 @@ contract NestVaultComposerAsyncSkewTest is NestVaultComposerTestBase {
         mockAuthority = new MockAuthority(true);
         shareOFT.setAuthority(Authority(address(mockAuthority)));
         vault.setAuthority(Authority(address(mockAuthority)));
-        predicateProxy.setAuthority(Authority(address(mockAuthority)));
+        complianceProxy.setAuthority(Authority(address(mockAuthority)));
         composer.setAuthority(Authority(address(mockAuthority)));
     }
 

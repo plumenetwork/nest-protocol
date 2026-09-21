@@ -10,7 +10,7 @@ import bs58 from 'bs58'
 import { ChainType, endpointIdToChainType, endpointIdToNetwork } from '@layerzerolabs/lz-definitions'
 
 import { EvmArgs, sendEvm } from '../evm/sendEvm'
-import { SolanaArgs, sendSolana } from '../solana/sendSolana'
+import { SolanaArgs, sendSolana } from './sendSolana'
 
 import { SendResult } from '../common/types'
 import { DebugLogger, KnownOutputs, KnownWarnings, getBlockExplorerLink } from '../common/utils'

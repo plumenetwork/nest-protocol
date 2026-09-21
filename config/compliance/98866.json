@@ -1,0 +1,11 @@
+{
+  "chainId": 98866,
+  "v1": {
+    "serviceManager": "0xdeaf0225C4D31E8a2C99893aB95bAB1790B8A687",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "plume",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  }
+}

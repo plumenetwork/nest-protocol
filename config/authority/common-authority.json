@@ -52,7 +52,8 @@
       "role": 0,
       "target": "blacklistHook",
       "functions": [
-        "unpause()"
+        "unpause()",
+        "unblacklist(address)"
       ],
       "conditionalOn": "blacklistHook"
     },
@@ -76,7 +77,8 @@
       "role": 15,
       "target": "blacklistHook",
       "functions": [
-        "blacklist(address)"
+        "blacklist(address)",
+        "unblacklist(address)"
       ],
       "conditionalOn": "shareSeizer"
     },
@@ -102,8 +104,8 @@
     { "user": "composer", "role": 12, "conditionalOn": "composer" },
     { "user": "CAN_SOLVE_ROLE", "role": 14, "conditionalOn": "redeemOperator" },
     { "user": "CAN_SOLVE_ROLE", "role": 14, "conditionalOn": "nestUnlooper" },
-    { "user": "owner", "role": 6, "conditionalOn": "ownerIsMsig" },
-    { "user": "owner", "role": 0, "conditionalOn": "ownerIsMsig" },
+    { "user": "PAUSER_ROLE", "role": 6 },
+    { "user": "OWNER_ROLE", "role": 0 },
     { "user": "shareSeizer", "role": 15, "conditionalOn": "shareSeizer" }
   ],
   "revokeCapabilities": [
@@ -129,6 +131,14 @@
       "functions": [
         "execute((address,address,address,address,uint256),address,address,address,bool)"
       ]
+    },
+    {
+      "role": 15,
+      "target": "blacklistHook",
+      "functions": [
+        "setBlacklisted(address,bool)"
+      ],
+      "conditionalOn": "blacklistHook"
     }
   ]
 }

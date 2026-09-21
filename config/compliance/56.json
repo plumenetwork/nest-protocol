@@ -1,0 +1,11 @@
+{
+  "chainId": 56,
+  "v1": {
+    "serviceManager": "0xb4486F75129B0aa74F99b1B8B7b478Cd4c17e994",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "bsc",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  }
+}

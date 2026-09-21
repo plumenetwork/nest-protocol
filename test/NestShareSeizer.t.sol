@@ -9,11 +9,11 @@ import {Authority} from "@solmate/auth/Auth.sol";
 import {ERC20Mock} from "@layerzerolabs/oft-evm-upgradeable/test/mocks/ERC20Mock.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 
-import {Constants} from "script/Constants.sol";
-import {BlacklistHook} from "contracts/hooks/BlacklistHook.sol";
+import {Constants} from "test/Constants.sol";
+import {BlacklistHook} from "contracts/compliance/hooks/BlacklistHook.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
-import {NestShareSeizer} from "contracts/NestShareSeizer.sol";
+import {NestShareSeizer} from "contracts/compliance/NestShareSeizer.sol";
 import {MockNestShareOFT} from "test/mock/MockNestShareOFT.sol";
 import {MockNestVault, NestVault} from "test/mock/MockNestVault.sol";
 import {MockRateProvider} from "test/mock/MockRateProvider.sol";
@@ -44,11 +44,13 @@ contract NestShareSeizerTest is TestHelperOz5, Constants {
         accountant.setRate(2e6);
 
         share = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[EID])),
-                abi.encodeWithSelector(NestShareOFT.initialize.selector, "Share", "SHARE", address(this), address(this))
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[EID])),
+                    abi.encodeWithSelector(
+                        NestShareOFT.initialize.selector, "Share", "SHARE", address(this), address(this)
+                    )
+                ))
         );
 
         vault = MockNestVault(

@@ -66,14 +66,43 @@ const config: HardhatUserConfig = {
         ],
     },
     networks: {
+        localhost: {
+            url: process.env.LOCAL_RPC_URL || 'http://127.0.0.1:8546',
+            accounts,
+        },
+        'bnbmainnet': {
+            eid: EndpointId.BSC_V2_MAINNET,
+            url: process.env.BNB_RPC_URL || 'https://bsc-dataseed.binance.org/',
+            accounts,
+        },
+        'ethereummainnet': {
+            eid: EndpointId.ETHEREUM_V2_MAINNET,
+            url: process.env.ETHEREUM_RPC_URL || 'https://ethereum-rpc.publicnode.com',
+            accounts,
+        },
+        avalanche: {
+            eid: EndpointId.AVALANCHE_V2_MAINNET,
+            url: process.env.AVALANCHE_RPC_URL || 'https://api.avax.network/ext/bc/C/rpc',
+            accounts,
+        },
         'plumephoenix': {
             eid: EndpointId.PLUMEPHOENIX_V2_MAINNET,
-            url: process.env.RPC_URL_PLUME_MAINNET || 'https://rpc.plume.org',
+            url: process.env.PLUME_RPC_URL || 'https://rpc.plume.org',
             accounts,
         },
         'plasma-mainnet': {
             eid: EndpointId.PLASMA_V2_MAINNET,
-            url: process.env.RPC_URL_PLASMA_MAINNET || 'https://rpc.plasma.to',
+            url: process.env.PLASMA_RPC_URL || 'https://rpc.plasma.to',
+            accounts,
+        },
+        'worldchain': {
+            eid: EndpointId.WORLDCHAIN_V2_MAINNET,
+            url: process.env.WORLDCHAIN_RPC_URL || 'https://rpc.worldchain.org',
+            accounts,
+        },
+        base: {
+            eid: EndpointId.BASE_V2_MAINNET,
+            url: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
             accounts,
         },
         hardhat: {

@@ -6,8 +6,8 @@ import {Test} from "forge-std/Test.sol";
 
 // contracts
 import {Helper} from "test/Helper.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
-import {NestVaultPredicateProxy} from "contracts/NestVaultPredicateProxy.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
+import {NestVaultPredicateProxy} from "contracts/compliance/NestVaultPredicateProxy.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";

@@ -1,5 +1,6 @@
 {
   "symbol": "nTBILL",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
   "name": "Nest Treasuries Vault",
   "baseAssetSymbol": "USDC",
   "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
@@ -77,8 +78,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -86,7 +92,12 @@
   },
 
   "roles": {
-    "owner": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],

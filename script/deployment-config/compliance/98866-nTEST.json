@@ -1,0 +1,10 @@
+{
+  "symbol": "nTEST",
+  "chainId": 98866,
+  "predicateV2Hook": "0xe1CD2F46B5aC47F5c65158a53116A0f413f4Ce4f",
+  "legacyPredicateV2Hook": "0x163AC64e4281ec2BcA9550FB4Fb9C3472c82Cb34",
+  "activateHook": false,
+  "legacyComplianceProxy": "0xdC13A73A3a04822Ad7FB1832F77a58df387349A2",
+  "complianceProxy": "0xF325E0f939963b42A22538B98b30E1CAeB2C37bA",
+  "composerV2": "0x4e6A52b0d22E333C01e71ed574DB6cE2b20CC0a1"
+}

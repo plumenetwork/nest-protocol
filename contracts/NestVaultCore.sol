@@ -6,7 +6,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {
@@ -28,14 +28,14 @@ import {IERC7575} from "forge-std/interfaces/IERC7575.sol";
 import {FixedPointMathLib} from "@solmate/utils/FixedPointMathLib.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {NestVaultOperatorLogic} from "contracts/libraries/nest-vault/NestVaultOperatorLogic.sol";
-import {NestVaultRedeemLogic} from "contracts/libraries/nest-vault/NestVaultRedeemLogic.sol";
-import {NestVaultDepositLogic} from "contracts/libraries/nest-vault/NestVaultDepositLogic.sol";
-import {NestVaultAdminLogic} from "contracts/libraries/nest-vault/NestVaultAdminLogic.sol";
-import {NestVaultAccountingLogic} from "contracts/libraries/nest-vault/NestVaultAccountingLogic.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
-import {NestVaultCoreValidationLogic} from "contracts/libraries/nest-vault/NestVaultCoreValidationLogic.sol";
-import {NestVaultTransferLogic} from "contracts/libraries/nest-vault/NestVaultTransferLogic.sol";
+import {NestVaultOperatorLogic} from "contracts/libraries/NestVaultOperatorLogic.sol";
+import {NestVaultRedeemLogic} from "contracts/libraries/NestVaultRedeemLogic.sol";
+import {NestVaultDepositLogic} from "contracts/libraries/NestVaultDepositLogic.sol";
+import {NestVaultAdminLogic} from "contracts/libraries/NestVaultAdminLogic.sol";
+import {NestVaultAccountingLogic} from "contracts/libraries/NestVaultAccountingLogic.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
+import {NestVaultCoreValidationLogic} from "contracts/libraries/NestVaultCoreValidationLogic.sol";
+import {NestVaultTransferLogic} from "contracts/libraries/NestVaultTransferLogic.sol";
 
 /// @title  NestVaultCore
 /// @notice NestVaultCore is an IERC7575 & IERC7540Redeem-compatible vault.

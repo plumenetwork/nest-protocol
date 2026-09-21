@@ -7,10 +7,10 @@ import {Options, DefenderOptions, TxOverrides} from "@openzeppelin/foundry-upgra
 import {Upgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 
 // contracts
-import {Constants} from "script/Constants.sol";
+import {Constants} from "test/Constants.sol";
 import {MockNestAccountant, NestHubAccountant} from "test/mock/MockNestAccountant.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 
 // interfaces
 import {IERC20, IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
