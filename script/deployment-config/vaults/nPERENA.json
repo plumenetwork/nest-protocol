@@ -1,5 +1,6 @@
 {
   "symbol": "nPERENA",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
   "name": "Nest Perena Vault",
   "baseAssetSymbol": "USDC",
   "vaultType": "NestVault",
@@ -7,7 +8,7 @@
   "contracts": {
     "share": "0xd99076fCfd61B3695c5A00740364a84AC8c46cBA",
     "accountant": "0x6A50aC774B0763e5dB27FCE266EF59D0B1AE7172",
-    "rolesAuthority": "0xBE5e9c2f105b28EE3D623707D64982ce29B3260B",
+    "rolesAuthority": "0xbf43923B2d876a1b84B7C5BC5eEdd14C199eB1c0",
     "vaults": [
       {
         "assetSymbol": "USDC",
@@ -64,8 +65,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -73,7 +79,12 @@
   },
 
   "roles": {
-    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],

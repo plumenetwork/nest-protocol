@@ -1,21 +1,41 @@
-# Compiler files
-cache/
-out/
+# ── Dependencies and toolchain state ─────────────────────────────────────────
+/node_modules/
+/.pnpm-store/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+# ── Compiler output ──────────────────────────────────────────────────────────
+/cache/
+/out/
+/artifacts/
+/target/
+/.anchor/
 
-# Dotenv file
-.env
+# ── Run output (never versioned) ─────────────────────────────────────────────
+# Foundry broadcast logs.
+/broadcast/
+# Safe batches, deployment records and other command output. Reviewed values
+# are promoted to config/ or deployments/ explicitly.
+/script/output/
+/generated/
+# Published package build output (tools/build-artifact-bundle.mjs and
+# tools/build-solana-deploy-package.mjs).
+/dist/
+# Coverage.
+/coverage/
+/lcov.info
 
-temp
+# ── Local-only working areas ─────────────────────────────────────────────────
+# One-off and incident-specific scripts stay local; reusable commands belong
+# in tools/.
+/local/
+/temp/
+/script/_temp/
+# Staging area for a specific revoke/migration run (copy a reviewed config
+# here only while that run needs it).
+/script/deployment-config/revoke/
+# Local audit working material (final reports live in audits/).
+/audit/
+/audits/AI/
 
-node_modules
-coverage
-lcov.info
-
-# solana layer zero config
-.anchor
-target
+# ── Environment and editor noise ─────────────────────────────────────────────
+/.env
+.DS_Store

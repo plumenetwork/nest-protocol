@@ -1,0 +1,11 @@
+{
+  "chainId": 9745,
+  "v1": {
+    "serviceManager": "0x332b2A44aF76d65a2754A4357356c0676eDb6d29",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "plasma",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  }
+}

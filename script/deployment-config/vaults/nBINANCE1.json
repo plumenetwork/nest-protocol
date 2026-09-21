@@ -1,25 +1,26 @@
 {
   "symbol": "nBINANCE1",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
   "name": "Nest Binance Vault 1",
   "baseAssetSymbol": "USDC",
   "vaultType": "NestVault",
   "accountantType": "NestHubAccountant",
 
   "contracts": {
-    "share": "0x0000000000000000000000000000000000000000",
-    "accountant": "0x0000000000000000000000000000000000000000",
-    "rolesAuthority": "0x0000000000000000000000000000000000000000",
+    "share": "0x55c9cbeAFb133A645031063f66cd44011c2b83EE",
+    "accountant": "0x5F25f4b39C2bbE56b3729Daf7EfFfC05E2e112d0",
+    "rolesAuthority": "0x34085E54D9e79CA0ec8a1826c839C98E52AAa27E",
     "vaults": [
       {
-        "address": "0x0000000000000000000000000000000000000000",
+        "address": "0x2C6a4125A1DE966442f632E268C927667df28a8D",
         "assetSymbol": "USDC",
         "chains": [1, 98866],
-        "composer": "0x0000000000000000000000000000000000000000",
+        "composer": "0x809C2F3cCd599A64a6bD675Dea356932a9fb6386",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000"
       },
       {
-        "address": "0x0000000000000000000000000000000000000000",
+        "address": "0x281Bc57837665c3E8D2cF6686FE873537E9Ea8c2",
         "assetSymbol": "pUSD",
         "chains": [98866],
         "composer": "0x0000000000000000000000000000000000000000",
@@ -65,8 +66,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-005"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-005"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -74,7 +80,12 @@
   },
 
   "roles": {
-    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],

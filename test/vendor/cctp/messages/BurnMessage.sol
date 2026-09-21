@@ -15,7 +15,7 @@
  */
 pragma solidity ^0.8.30;
 
-import {TypedMemView} from "contracts/libraries/vendor/cctp/TypedMemView.sol";
+import {TypedMemView} from "contracts/vendor/cctp/libraries/TypedMemView.sol";
 
 /**
  * @title BurnMessage Library

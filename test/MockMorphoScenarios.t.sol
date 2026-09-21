@@ -12,12 +12,12 @@ import {ORACLE_PRICE_SCALE} from "@morpho/libraries/ConstantsLib.sol";
 import {MarketParamsLib} from "@morpho/libraries/MarketParamsLib.sol";
 import {PredicateMessage} from "@predicate/src/interfaces/IPredicateClient.sol";
 import {GeneralAdapter1} from "contracts/vendor/morpho/GeneralAdapter1.sol";
-import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
-import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {MorphoAdapter} from "contracts/integrations/morpho/MorphoAdapter.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
-import {BundleBuildLib} from "contracts/morpho/libraries/BundleBuildLib.sol";
-import {BundleCalldataLib} from "contracts/morpho/libraries/BundleCalldataLib.sol";
-import {NestShareMathLib} from "contracts/morpho/libraries/NestShareMathLib.sol";
+import {BundleBuildLib} from "contracts/integrations/morpho/libraries/BundleBuildLib.sol";
+import {BundleCalldataLib} from "contracts/integrations/morpho/libraries/BundleCalldataLib.sol";
+import {NestShareMathLib} from "contracts/integrations/morpho/libraries/NestShareMathLib.sol";
 import {
     Bundle,
     BundleContext,
@@ -26,8 +26,8 @@ import {
     RouteInput,
     Position,
     UserIntent
-} from "contracts/morpho/types/BundleTypes.sol";
-import {NestBundleErrors} from "contracts/morpho/types/Errors.sol";
+} from "contracts/integrations/morpho/types/BundleTypes.sol";
+import {NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
 
 contract MockMorphoScenario {
     mapping(bytes32 => MorphoPosition) internal _positions;
@@ -108,7 +108,7 @@ contract MockMorphoScenarios is Test {
     address internal constant BUNDLER = address(0x2002);
     address internal constant VAULT = address(0x2003);
     address internal constant TELLER = address(0x2004);
-    address internal constant PREDICATE_PROXY = address(0x2005);
+    address internal constant COMPLIANCE_PROXY = address(0x2005);
     address internal constant ATOMIC_SOLVER = address(0x2006);
     address internal constant ATOMIC_QUEUE = address(0x2007);
     address internal constant ACCOUNTANT = address(0x2008);
@@ -197,9 +197,29 @@ contract MockMorphoScenarios is Test {
             target: Position({loan: 1, collateral: 1}),
             delta: MarketActions({borrow: 0, flashRepay: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
         });
-        RouteInput memory route = RouteInput({legacyRedemption: true, legacyDeposit: false, instantRedeem: true});
+        RouteInput memory route =
+            RouteInput({legacyRedemption: true, legacyDeposit: false, instantRedeem: true, compliantRedemption: false});
 
         vm.expectRevert(NestBundleErrors.LegacyRedemptionCannotUseInstantRedeem.selector);
+        harness.getTargetBundle(_context(), intent, route, 0, 0);
+    }
+
+    function test_validateBundleInput_revertsWhenLegacyAndCompliantRedemptionAreBothTrue() external {
+        UserIntent memory intent = UserIntent({
+            market: marketParams,
+            assetAllowance: 0,
+            shareAllowance: 0,
+            maxSharePriceE27: 1,
+            minSharePriceE27: 0,
+            maxRepaySharePriceE27: type(uint256).max,
+            mode: PositionMode.Target,
+            target: Position({loan: 1, collateral: 1}),
+            delta: MarketActions({borrow: 0, flashRepay: 0, repay: 0, supplyCollateral: 0, withdrawCollateral: 0})
+        });
+        RouteInput memory route =
+            RouteInput({legacyRedemption: true, legacyDeposit: false, instantRedeem: false, compliantRedemption: true});
+
+        vm.expectRevert(NestBundleErrors.LegacyRedemptionCannotUseCompliance.selector);
         harness.getTargetBundle(_context(), intent, route, 0, 0);
     }
 
@@ -254,7 +274,7 @@ contract MockMorphoScenarios is Test {
         });
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         // The bundle must flash-loan 21 (20 + full-repay buffer); redeem shares round up to 14 (worth 21).
         uint256 flashLoanAssets = _flashLoanAssets(bundle);
@@ -311,7 +331,7 @@ contract MockMorphoScenarios is Test {
         });
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         // There is no repay, deposit, or redeem leg here, so there is no rounding-based surplus to blame.
         assertEq(_flashLoanAssets(bundle), 0, "flash loan mismatch");
@@ -353,7 +373,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(40);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70, 100), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.flashRepay, 71, "flashRepay (70 + full-repay buffer)");
         assertEq(_flashLoanAssets(bundle), 71, "flash total");
 
@@ -412,7 +432,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 0, collateral: 0});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.flashRepay, 52, "linear full-exit flashRepay (51 + full-repay buffer)");
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
@@ -459,7 +479,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(40_000);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70_000, 100_000), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
         assertEq(calls.length, 3, "two flash loans + sweep");
@@ -499,7 +519,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(69_999);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70_000, 100_000), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         // The buffered 2-unit tail chunk redeems 12 shares (2 + flat 10) at a 1:1 rate; its flat fee is 10/12 of
         // gross, far above FEE_CAP (20%), so the build reverts. External wrapper so `expectRevert` matches the
@@ -541,7 +561,7 @@ contract MockMorphoScenarios is Test {
             MarketActions({borrow: 0, flashRepay: 0, repay: 190, supplyCollateral: 0, withdrawCollateral: 201});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         // Chunk 0 repays 100, withdraws redeem(100)=110 collateral -> debt 90 vs maxBorrow floor(91*1.2*0.8)=87.
         vm.expectRevert(NestBundleErrors.LoopBreachesLltv.selector);
@@ -562,7 +582,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(10);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70, 100), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.flashRepay, 71, "flashRepay (70 + full-repay buffer)");
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
@@ -630,7 +650,7 @@ contract MockMorphoScenarios is Test {
 
         Bundle memory bundle =
             BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(repay, bufferedRepay), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         vm.expectRevert(NestBundleErrors.ExceedsMaxLoops.selector);
         this.callGetBundleCalls(bundle);
@@ -657,7 +677,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 40, collateral: 120});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.repay, 60, "repay");
         assertEq(bundle.ma.withdrawCollateral, 80, "withdraw");
 
@@ -718,7 +738,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 50, collateral: 90});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.repay, 200, "repay");
         assertEq(bundle.ma.withdrawCollateral, 210, "single-shot withdraw budget");
         assertEq(bundle.va.redeem, 210, "single-shot redeem (one flat fee), within budget so build passes");
@@ -767,7 +787,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(1);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(10, 11), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.LoopRepayBurnsZeroShares.selector, 1, 10_000_000, 1));
         this.callGetBundleCalls(bundle);
@@ -803,7 +823,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 0, collateral: 0});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.InsufficientCollateralForRedeem.selector, 640, 635));
         this.callGetBundleCalls(bundle);
@@ -820,7 +840,7 @@ contract MockMorphoScenarios is Test {
         // Default Morpho liquidity is ample, so this stays a single flash loan (no looping).
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70, 100), _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         // The build normalizes the Delta full exit into a Target full exit.
         assertEq(uint8(bundle.intent.mode), uint8(PositionMode.Target), "delta full exit normalized to target");
         assertEq(bundle.intent.target.loan, 0, "target loan zeroed");
@@ -955,7 +975,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 0, collateral: 0});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.flashRepay, 31, "stale buffered flashRepay target captured at build");
 
         // Live debt grows to 100 after the bundle was built; liquidity is only 20.
@@ -988,7 +1008,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(40);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70, 100), _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.flashRepay, 71, "flashRepay (70 + full-repay buffer)");
         assertEq(bundle.va.redeem, 71, "single-shot instant redeem (1:1, no fee)");
         assertEq(_flashLoanAssets(bundle), 71, "flash total");
@@ -1053,7 +1073,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 50, collateral: 90});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.repay, 200, "repay");
         assertEq(bundle.va.redeem, 210, "single-shot instant redeem (one instant flat fee)");
 
@@ -1119,7 +1139,7 @@ contract MockMorphoScenarios is Test {
         // Default Morpho liquidity is ample (type(uint256).max), so no looping.
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70, 100), _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
         assertEq(calls.length, 2, "single flash loan + sweep (no looping)");
@@ -1154,7 +1174,7 @@ contract MockMorphoScenarios is Test {
 
         Bundle memory bundle =
             BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70_000, 100_000), _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
         assertEq(calls.length, 3, "two flash loans + sweep");
@@ -1197,7 +1217,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 40, collateral: 120});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.ma.repay, 60, "repay");
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
@@ -1243,7 +1263,7 @@ contract MockMorphoScenarios is Test {
 
         Bundle memory bundle =
             BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70_000, 100_000), _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
         assertEq(calls.length, 3, "two flash loans + sweep");
@@ -1272,7 +1292,7 @@ contract MockMorphoScenarios is Test {
         _setMorphoLoanLiquidity(10);
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), _fullExitDeltaIntent(70, 100), _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
         assertEq(calls.length, 5, "four flash loans + sweep");
@@ -1329,7 +1349,7 @@ contract MockMorphoScenarios is Test {
         intent.target = Position({loan: 50, collateral: 90});
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.va.redeem, 210, "single-shot redeem passes build against buffer 215");
 
         // The looped instant build succeeds despite gross sum 220 > buffer 215: instant is not gated by the
@@ -1378,7 +1398,7 @@ contract MockMorphoScenarios is Test {
 
         // Build succeeds: the single-shot instant redeem (40 shares) is within the buffer's liquidity (40 shares).
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _instantRoute());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.va.redeem, 40, "single-shot instant redeem passes build against buffer");
 
         // Looped peak draw 61 > buffer 60: the peak-aware guard rejects at build instead of reverting mid-execution.
@@ -1415,7 +1435,7 @@ contract MockMorphoScenarios is Test {
 
         // Build succeeds (async never checks the buffer; single-shot va.redeem 210 within the flat-fee cap).
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         assertEq(bundle.va.redeem, 210, "single-shot async redeem (one flat fee)");
 
         vm.expectRevert(abi.encodeWithSelector(NestBundleErrors.InsufficientRedeemLiquidity.selector, 220, 215));
@@ -1481,7 +1501,7 @@ contract MockMorphoScenarios is Test {
         }
 
         Bundle memory bundle = BundleBuildLib.getBundle(_context(), intent, _route());
-        bundle.predicateMessage = _emptyPredicateMessage();
+        bundle.complianceData = abi.encode(_emptyPredicateMessage());
         _assertActions(s, bundle);
 
         Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
@@ -1562,16 +1582,16 @@ contract MockMorphoScenarios is Test {
             return _appendUintField(string.concat(prefix, "morphoWithdrawCollateralOnBehalf"), "assets", assets);
         }
 
-        if (sel == NestAdapter.nestPredicateMint.selector) {
-            (,, uint256 shares,,,) =
-                abi.decode(_stripSelector(call_.data), (address, address, uint256, uint256, address, PredicateMessage));
-            return _appendUintField(string.concat(prefix, "nestPredicateMint"), "shares", shares);
+        if (sel == NestAdapter.nestComplianceMint.selector) {
+            (,, uint256 shares,,,,) =
+                abi.decode(_stripSelector(call_.data), (address, address, uint256, uint256, address, bytes32, bytes));
+            return _appendUintField(string.concat(prefix, "nestComplianceMint"), "shares", shares);
         }
 
-        if (sel == NestAdapter.nestPredicateDeposit.selector) {
-            (,, uint256 assets,,,) =
-                abi.decode(_stripSelector(call_.data), (address, address, uint256, uint256, address, PredicateMessage));
-            return _appendUintField(string.concat(prefix, "nestPredicateDeposit"), "assets", assets);
+        if (sel == NestAdapter.nestComplianceDeposit.selector) {
+            (,, uint256 assets,,,,) =
+                abi.decode(_stripSelector(call_.data), (address, address, uint256, uint256, address, bytes32, bytes));
+            return _appendUintField(string.concat(prefix, "nestComplianceDeposit"), "assets", assets);
         }
 
         if (sel == NestAdapter.tellerPredicateDeposit.selector) {
@@ -1784,7 +1804,7 @@ contract MockMorphoScenarios is Test {
         if (bundle.va.deposit != 0) {
             selectors[i++] = bundle.route.legacyDeposit
                 ? NestAdapter.tellerPredicateDeposit.selector
-                : NestAdapter.nestPredicateMint.selector;
+                : NestAdapter.nestComplianceMint.selector;
         }
         if (bundle.ma.supplyCollateral != 0) {
             selectors[i++] = GeneralAdapter1.morphoSupplyCollateral.selector;
@@ -1822,7 +1842,7 @@ contract MockMorphoScenarios is Test {
         context.bundler = BUNDLER;
         context.vault = INestVaultCore(VAULT);
         context.teller = TELLER;
-        context.predicateProxy = PREDICATE_PROXY;
+        context.complianceProxy = COMPLIANCE_PROXY;
         context.atomicSolver = ATOMIC_SOLVER;
         context.atomicQueue = ATOMIC_QUEUE;
         context.owner = OWNER;

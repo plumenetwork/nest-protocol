@@ -18,8 +18,8 @@
 pragma solidity ^0.8.30;
 
 import {TokenMinter} from "./TokenMinter.sol";
-import {IMintBurnToken} from "contracts/interfaces/vendor/cctp/IMintBurnToken.sol";
-import {ITokenMinterV2} from "contracts/interfaces/vendor/cctp/ITokenMinterV2.sol";
+import {IMintBurnToken} from "contracts/vendor/cctp/interfaces/IMintBurnToken.sol";
+import {ITokenMinterV2} from "contracts/vendor/cctp/interfaces/ITokenMinterV2.sol";
 
 /**
  * @title TokenMinterV2

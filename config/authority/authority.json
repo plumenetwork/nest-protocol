@@ -64,13 +64,21 @@
       "conditionalOn": "nestAdapter"
     },
     {
+      "role": 16,
+      "target": "complianceProxy",
+      "functions": [
+        "genericUserCheck(address,bytes)",
+        "genericUserCheck(address,bytes32,bytes)"
+      ],
+      "conditionalOn": "complianceProxy"
+    },
+    {
       "role": 8,
       "target": "vault",
       "functions": [
         "deposit(uint256,address)",
         "mint(uint256,address)"
-      ],
-      "conditionalOn": "nestAdapter"
+      ]
     },
     {
       "role": 11,
@@ -95,7 +103,7 @@
       "role": 11,
       "target": "composer",
       "functions": [
-        "fulfillRedeem(uint32,bytes32,uint256)"
+        "fulfillRedeem(uint32,bytes32,bytes32,uint256)"
       ],
       "conditionalOn": "composer"
     },
@@ -113,6 +121,7 @@
       "target": "composer",
       "functions": [
         "blockCompose(bytes32)",
+        "unblockCompose(bytes32)",
         "setMaxRetryableValue(uint256)",
         "recover(address,uint256,bytes)"
       ],
@@ -138,6 +147,22 @@
     }
   ],
   "publicCapabilities": [
+    {
+      "target": "complianceProxy",
+      "functions": [
+        "deposit(address,uint256,address,address,bytes)",
+        "depositWithPermit2(address,uint256,address,address,address,uint256,uint256,bytes,bytes)",
+        "depositOnBehalf(address,address,uint256,address,bytes32,bytes)",
+        "depositOnBehalfWithPermit2(address,address,uint256,address,bytes32,address,uint256,uint256,bytes,bytes)",
+        "mint(address,uint256,address,address,bytes)",
+        "mintOnBehalf(address,uint256,address,address,bytes32,bytes)",
+        "requestRedeem(uint256,address,address,bytes)",
+        "requestRedeemWithPermit2(uint256,address,address,uint256,uint256,bytes,bytes)",
+        "instantRedeem(uint256,address,address,bytes)",
+        "instantRedeemWithPermit2(uint256,address,address,uint256,uint256,bytes,bytes)"
+      ],
+      "conditionalOn": "complianceProxy"
+    },
     {
       "target": "vault",
       "functions": [
@@ -179,14 +204,33 @@
     { "user": "CAN_SOLVE_ROLE", "role": 11 },
     { "user": "redeemOperator", "role": 11, "conditionalOn": "redeemOperator" },
     { "user": "shareSeizer", "role": 15, "conditionalOn": "shareSeizer" },
-    { "user": "owner", "role": 6 },
-    { "user": "owner", "role": 0 },
+    { "user": "PAUSER_ROLE", "role": 6 },
+    { "user": "OWNER_ROLE", "role": 0 },
     { "user": "nestAdapter", "role": 5, "conditionalOn": "nestAdapter" },
     { "user": "nestAdapter", "role": 8, "conditionalOn": "nestAdapter" },
+    { "user": "nestAdapter", "role": 16, "conditionalOn": "nestAdapter" },
+    { "user": "DEPOSITOR_ROLE", "role": 8 },
     { "user": "nestUnlooper", "role": 5, "conditionalOn": "nestUnlooper" }
+  ],
+  "revokeCapabilities": [
+    {
+      "role": 0,
+      "target": "composer",
+      "functions": [
+        "setBlockCompose(bytes32,bool)"
+      ]
+    },
+    {
+      "role": 11,
+      "target": "composer",
+      "functions": [
+        "fulfillRedeem(uint32,bytes32,uint256)"
+      ]
+    }
   ],
   "revokeRoleAssignments": [
     { "user": "0xB7e21EcEc8cA083AcEfb465048EDc604328d39A2", "role": 5 },
-    { "user": "0x732ecb959599Fd23c9242C804B2EC98EF53eb7ED", "role": 5 }
+    { "user": "0x732ecb959599Fd23c9242C804B2EC98EF53eb7ED", "role": 5 },
+    { "user": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e", "role": 6 }
   ]
 }

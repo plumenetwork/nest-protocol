@@ -5,6 +5,13 @@ name: publish-artifacts
 # per-chain config per branch. dist-tags track the branch: `main` and `develop`
 # always point at that branch's latest build. Packages do NOT expire (unlike
 # actions/upload-artifact, which is pruned after ~90 days).
+#
+# A second independent job publishes @plumenetwork/nest-solana-deploy — the
+# runnable Solana LayerZero task layer (sources + committed deployment/config
+# state, no compilation) that Mission Control's runner installs instead of
+# cloning this private repository. Same registry, same GITHUB_TOKEN, same
+# branch dist-tags; npm embeds gitHead at publish for MC's commit gate, and
+# provenance.json carries { sha, ref, builtAt } for offline gates.
 
 on:
   push:
@@ -20,7 +27,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Keep package publishing in the private source repo when mirrored publicly.
   publish:
+    if: github.repository == 'plumenetwork/nest-contracts'
     name: Build & publish @plumenetwork/nest-artifacts
     runs-on: ubuntu-latest
     steps:
@@ -43,8 +52,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check signer-message grammar
+        run: pnpm check:signer-grammar
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
 
       # Default profile (NOT the `ci` profile) so the emitted creation bytecode
       # matches what the deploy scripts actually broadcast. FULL build (no path
@@ -57,15 +71,45 @@ jobs:
       # is what test.yml already exercises on CI; the bundle script fails the
       # workflow if any required artifact is still missing.
       - name: Compile contracts
-        run: forge build --skip contracts/operators/old/*
+        run: forge build
 
       - name: Build artifact bundle (dist/nest-artifacts/)
         env:
           PKG_VERSION: 0.0.0-${{ github.ref_name }}.${{ github.run_number }}
-        run: node ts-scripts/build-artifact-bundle.mjs
+        run: node tools/build-artifact-bundle.mjs
 
       - name: Publish to GitHub Packages (dist-tag = branch)
         working-directory: dist/nest-artifacts
+        run: npm publish --tag "${GITHUB_REF_NAME}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-solana-deploy:
+    if: github.repository == 'plumenetwork/nest-contracts'
+    name: Build & publish @plumenetwork/nest-solana-deploy
+    runs-on: ubuntu-latest
+    steps:
+      # No submodules, pnpm install, foundry or bun: the builder is
+      # dependency-free (Node built-ins) and packages sources + committed
+      # state only — nothing is compiled or resolved at build time.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.5
+          registry-url: https://npm.pkg.github.com
+          scope: '@plumenetwork'
+
+      - name: Build package (dist/nest-solana-deploy/)
+        env:
+          PKG_VERSION: 0.0.0-${{ github.ref_name }}.${{ github.run_number }}
+        run: node tools/build-solana-deploy-package.mjs
+
+      # Published from inside the repo working tree so npm embeds gitHead in
+      # the packument — the same mechanism Mission Control's vendoredCommitGate
+      # already trusts for nest-artifacts.
+      - name: Publish to GitHub Packages (dist-tag = branch)
+        working-directory: dist/nest-solana-deploy
         run: npm publish --tag "${GITHUB_REF_NAME}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

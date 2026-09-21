@@ -1,0 +1,60 @@
+{
+  "chainId": 5042,
+  "eid": 30417,
+  "endpoint": "0x6f475642a6e85809b1c36fa62763669b1b48dd5b",
+  "sendLib302": "0xc39161c743d0307eb9bcc9fef03eeb9dc4802de7",
+  "receiveLib302": "0xe1844c5d63a9543023008d332bd3d2e6f1fe1043",
+  "executor": "0x4208d6e27538189bb48e603d6123a94b8abe0a0b",
+  "delegate": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
+  "dvns": {
+    "1": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    },
+    "56": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    },
+    "480": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    },
+    "8453": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    },
+    "9745": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    },
+    "43114": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    },
+    "98866": {
+      "lz": "0xa2447e5b58d357c49bf74b50b14421e6a100e525",
+      "nethermind": "0x9e0e95ede70f680f74480b510ff9f45c70e3da80",
+      "canary": "0xacde1f22eeab249d3ca6ba8805c8fee9f52a16e7"
+    }
+  },
+  "enforcedOptions": {
+    "receive": {
+      "gas": 200000,
+      "msgValue": 0
+    },
+    "send": {
+      "gas": 200000,
+      "msgValue": 0
+    },
+    "compose": {
+      "gas": 450000,
+      "msgValue": 0
+    }
+  }
+}

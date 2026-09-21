@@ -3,5 +3,6 @@
     "mint": "8qujzAXj2nz99CmeiCgPPc2JxEuDNYvPffzRomroJnee",
     "mintAuthority": "GRDrq2442BDjpLaj8ng1pcP7WnP6YvLVzYQpMW7G4sM2",
     "escrow": "2iFLXCmEBF5NUcuyXJ5PCbdedYv18cdMaAvXNsRBoXTY",
-    "oftStore": "4S1mQ8SXKGd1G87mnWwGxtzqjEbXaiGHrmi8tVkjhPkJ"
+    "oftStore": "4S1mQ8SXKGd1G87mnWwGxtzqjEbXaiGHrmi8tVkjhPkJ",
+    "oftStoreBytes32": "0x32fb72516c83d2f297f211dd2e4a898f4ead5271389b0ba706058f5c57cbb727"
 }

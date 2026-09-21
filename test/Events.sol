@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
 
 contract Events {
     event OperatorSet(address indexed controller, address indexed operator, bool approved);

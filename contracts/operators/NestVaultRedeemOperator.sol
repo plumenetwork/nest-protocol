@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 // contracts
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {

@@ -19,12 +19,12 @@ pragma solidity ^0.8.30;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {BaseTokenMessenger} from "test/vendor/cctp/BaseTokenMessenger.sol";
-import {ITokenMinterV2} from "contracts/interfaces/vendor/cctp/ITokenMinterV2.sol";
-import {AddressUtils} from "contracts/libraries/vendor/cctp/AddressUtils.sol";
-import {IRelayerV2} from "contracts/interfaces/vendor/cctp/IRelayerV2.sol";
-import {IMessageHandlerV2} from "contracts/interfaces/vendor/cctp/IMessageHandlerV2.sol";
-import {TypedMemView} from "contracts/libraries/vendor/cctp/TypedMemView.sol";
-import {BurnMessageV2} from "contracts/libraries/vendor/cctp/BurnMessageV2.sol";
+import {ITokenMinterV2} from "contracts/vendor/cctp/interfaces/ITokenMinterV2.sol";
+import {AddressUtils} from "contracts/vendor/cctp/libraries/AddressUtils.sol";
+import {IRelayerV2} from "contracts/vendor/cctp/interfaces/IRelayerV2.sol";
+import {IMessageHandlerV2} from "contracts/vendor/cctp/interfaces/IMessageHandlerV2.sol";
+import {TypedMemView} from "contracts/vendor/cctp/libraries/TypedMemView.sol";
+import {BurnMessageV2} from "contracts/vendor/cctp/libraries/BurnMessageV2.sol";
 import {TOKEN_MESSENGER_MIN_FINALITY_THRESHOLD} from "test/vendor/cctp/FinalityThresholds.sol";
 
 /**

@@ -1,5 +1,6 @@
 {
   "symbol": "nINSTO",
+  "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
   "name": "Nest Institutional Vault",
   "baseAssetSymbol": "USDC",
   "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
@@ -46,8 +47,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -55,7 +61,6 @@
   },
 
   "roles": {
-    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],

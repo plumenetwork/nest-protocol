@@ -153,8 +153,10 @@ export const getSolanaDeployment = (
     if (!eid) {
         throw new Error('eid is required')
     }
+    const vaultSymbol = process.env.VAULT_SYMBOL
     const outputDir = path.join('deployments', endpointIdToNetwork(eid))
-    const filePath = path.join(outputDir, 'OFT.json') // Note: if you have multiple deployments, change this filename to refer to the desired deployment file
+    const fileName = vaultSymbol ? `${vaultSymbol}-OFT.json` : 'OFT.json'
+    const filePath = path.join(outputDir, fileName)
 
     if (!existsSync(filePath)) {
         DebugLogger.printWarning(KnownWarnings.SOLANA_DEPLOYMENT_NOT_FOUND)
@@ -285,6 +287,13 @@ export const getComputeUnitPriceAndLimit = async (
         throw new Error('Unable to compute units')
     }
 
+    // getSimulationComputeUnits under-reports for create+initialize-in-one-tx
+    // (e.g. InitializeMultisig → ~57 CU limit). Floor to the known-good estimate.
+    const floor = TransactionCuEstimates[transactionType]
+    if (floor && computeUnits < floor) {
+        computeUnits = floor
+    }
+
     return {
         computeUnitPrice,
         computeUnits,
@@ -335,7 +344,11 @@ export const addComputeUnitInstructions = async (
                 microLamports: computeUnitPrice * BigInt(Math.floor(computeUnitPriceScaleFactor)),
             })
         )
-        .add(setComputeUnitLimit(umi, { units: computeUnits * computeUnitLimitScaleFactor }))
+        // +300 CU fixed headroom: the simulation does NOT include the
+        // setComputeUnitPrice instruction added above (~150 CU) — with p-token
+        // making real CU counts tiny, the 10% buffer alone no longer covers it
+        // (live failure: limit 513, InitializeMultisig needed 167 with 63 left).
+        .add(setComputeUnitLimit(umi, { units: Math.ceil(computeUnits * computeUnitLimitScaleFactor) + 300 }))
         .setAddressLookupTables(addressLookupTableInputs)
         .add(txBuilder)
     return newTxBuilder

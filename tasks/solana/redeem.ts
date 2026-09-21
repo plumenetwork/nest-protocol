@@ -1,6 +1,9 @@
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { task, types } from 'hardhat/config'
 import { HardhatRuntimeEnvironment } from 'hardhat/types'
 import { BigNumber, utils } from 'ethers'
+import { parseUnits } from 'ethers/lib/utils'
 import { createAssociatedToken, fetchMint, findAssociatedTokenPda, safeFetchToken } from '@metaplex-foundation/mpl-toolbox'
 import { fromWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { PublicKey } from '@solana/web3.js'
@@ -10,7 +13,7 @@ import bs58 from 'bs58'
 import { ChainType, endpointIdToChainType, endpointIdToNetwork } from '@layerzerolabs/lz-definitions'
 
 import { EvmArgs, sendEvm } from '../evm/sendEvm'
-import { SolanaArgs, sendSolana } from '../solana/sendSolana'
+import { SolanaArgs, sendSolana } from './sendSolana'
 
 import { SendResult } from '../common/types'
 import { DebugLogger, KnownOutputs, KnownWarnings, getBlockExplorerLink } from '../common/utils'
@@ -20,14 +23,24 @@ import { parseDecimalToUnits } from './utils'
 import { publicKey } from '@metaplex-foundation/umi'
 import { createGetHreByEid } from '@layerzerolabs/devtools-evm-hardhat'
 import { createLogger } from '@layerzerolabs/io-devtools'
-import { parseUnits } from 'ethers/lib/utils'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 import { makeBytes32 } from '@layerzerolabs/devtools'
 
 
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+const PLUME_EID = 30370
 
 const logger = createLogger()
+
+interface LayerZeroContractConfig {
+    contract: {
+        eid: number
+    }
+}
+
+interface LayerZeroConfigFile {
+    contracts: LayerZeroContractConfig[]
+}
 
 
 /**
@@ -226,6 +239,28 @@ interface MasterArgs {
     redeemMode?: string
 }
 
+const resolveBridgeDestinationEid = (): number => {
+    const vaultSymbol = process.env.VAULT_SYMBOL
+
+    if (!vaultSymbol) {
+        throw new Error('VAULT_SYMBOL env var is required to resolve the bridge destination eid')
+    }
+
+    const configPath = path.resolve(process.cwd(), 'config', 'layerzero', 'vaults', `${vaultSymbol}.json`)
+    if (!existsSync(configPath)) {
+        throw new Error(`Could not find LayerZero config file at ${configPath}`)
+    }
+
+    const { contracts } = JSON.parse(readFileSync(configPath, 'utf-8')) as LayerZeroConfigFile
+    const bridgeContract = contracts.find(({ contract }) => contract.eid === PLUME_EID)
+
+    if (!bridgeContract) {
+        throw new Error(`Could not find Plume eid ${PLUME_EID} in ${configPath}`)
+    }
+
+    return bridgeContract.contract.eid
+}
+
 task(
     'lz:oft:nest:redeem',
     "Cross-chain redeem helper: supports 'instant-redeem', 'request-redeem', 'finish-redeem', and 'withdraw' from Solana or EVM"
@@ -270,6 +305,7 @@ task(
     .setAction(async (args: MasterArgs, hre: HardhatRuntimeEnvironment) => {
         const chainType = endpointIdToChainType(args.srcEid)
         let result: SendResult
+        let outputDstEid = args.dstEid
 
         if (args.oftAddress || args.oftProgramId) {
             DebugLogger.printWarning(
@@ -283,6 +319,12 @@ task(
             result = await sendEvm(args as EvmArgs, hre)
         } else if (chainType === ChainType.SOLANA) {
             const { umi, umiWalletSigner } = await deriveConnection(args.srcEid)
+            const bridgeDstEid = resolveBridgeDestinationEid()
+            outputDstEid = bridgeDstEid
+
+            logger.info(
+                `Bridging shares to ${endpointIdToNetwork(bridgeDstEid)} (${bridgeDstEid}); compose payload final dst is ${endpointIdToNetwork(args.dstEid)} (${args.dstEid})`
+            )
 
             // Derive sender's associated token account for USDC
             const usdcMint = fromWeb3JsPublicKey(new PublicKey(USDC_MINT))
@@ -320,68 +362,41 @@ task(
             const minAmount = args.minAmount ? parseDecimalToUnits(args.minAmount, decimals) : BigInt(0)
             // Pass through the requested redeem mode
             const redeemMode = args.redeemMode as RedeemMode
-            let minMsgValue = BigInt(0) // Can be made configurable if needed 
+            let minMsgValue = BigInt(0)
 
             if (redeemMode === "update-redeem-request") {
-                // ============================================================
-                // Quote the destination hop fee (Fraxtal -> Final Destination)
-                // ============================================================
-                const PLUME_EID = 30370
+                // Quote the Plume -> Solana return-hop fee that the composer's _send will pay.
+                // Mirror the composer's actual sendParam (extraOptions/composeMsg = 0x; relies on enforced options).
+                logger.info(`Quoting Plume return-hop fee (${endpointIdToNetwork(bridgeDstEid)} -> ${endpointIdToNetwork(args.srcEid)})...`)
 
-                logger.info('Quoting destination composer fee (Plume -> Final Destination)...')
+                const vaultSymbol = process.env.VAULT_SYMBOL
+                if (!vaultSymbol) {
+                    throw new Error('VAULT_SYMBOL env var is required to resolve the Plume OFT deployment')
+                }
 
-                // Connect to Fraxtal to quote the second hop
                 const getHreByEid = createGetHreByEid(hre)
-                const plumeHre = await getHreByEid(PLUME_EID)
-                const evmOftAddress = (await plumeHre.deployments.get('OFT')).address
-
-                // Load the NestVaultComposer contract (it should have quoteSend or we use the underlying OFT)
-                const plumeOft = await plumeHre.ethers.getContractAt((await plumeHre.deployments.get('OFT')).abi, evmOftAddress)
-
-                // Get decimals directly from the underlying token using minimal ABI
+                const plumeHre = await getHreByEid(bridgeDstEid)
+                const plumeOftDeployment = await plumeHre.deployments.get(vaultSymbol)
+                const plumeOft = await plumeHre.ethers.getContractAt(plumeOftDeployment.abi, plumeOftDeployment.address)
                 const plumeDecimals: number = await plumeOft.decimals()
                 const plumeAmountUnits = parseUnits(args.amount, plumeDecimals)
 
-                // Build sendParam for the Plume -> Final Destination quote
-                const dstSendParam = {
+                const returnSendParam = {
                     dstEid: args.srcEid,
                     to: makeBytes32(bs58.decode(umiWalletSigner.publicKey)),
                     amountLD: plumeAmountUnits.toString(),
-                    minAmountLD: plumeAmountUnits.toString(),
+                    minAmountLD: '0',
                     extraOptions: '0x',
-                    composeMsg: utils.defaultAbiCoder.encode(['uint8'], [RedeemTypeEnum.UPDATE_REDEEM_REQUEST]),
+                    composeMsg: '0x',
                     oftCmd: '0x',
                 }
 
-                // Quote the fee for the destination hop
-                let destinationMsgFee: { nativeFee: BigNumber; lzTokenFee: BigNumber }
-                try {
-                    destinationMsgFee = await plumeOft.quoteSend(dstSendParam, false)
-                    logger.info(`Destination hop fee: ${utils.formatEther(destinationMsgFee.nativeFee)} PLUME`)
-                } catch (error) {
-                    logger.error('Failed to quote destination hop fee:', error)
-                    throw error
-                }
-
-                // ============================================================
-                // Now prepare the Solana -> Plume send with compose message
-                // ============================================================
-
-
-                // Add compose options with the destination native fee as nativeDrop
-                // The nativeDrop is in wei (destination chain's native token)
-                minMsgValue = BigInt(destinationMsgFee.nativeFee.toString())
-
-                logger.info(`Compose options with nativeDrop: ${minMsgValue} wei`)
+                const returnMsgFee: { nativeFee: BigNumber; lzTokenFee: BigNumber } = await plumeOft.quoteSend(returnSendParam, false)
+                minMsgValue = BigInt(returnMsgFee.nativeFee.toString())
+                logger.info(`Plume return-hop fee: ${utils.formatEther(returnMsgFee.nativeFee)} (native units)`)
             }
 
-            // Build mode-specific compose message.
-            // SendParam.to carries the USDC token account (ATA) for every mode:
-            //  - instant/finish: it is the asset destination where USDC lands.
-            //  - request/update: the composer binds it as the receiver / controller of the request bucket
-            //    keyed by (redeemer = compose sender, receiver = this ATA). Returned shares on an update are
-            //    routed by the composer to the redeemer (main account); they are NOT sent to this ATA.
-            // The main account (umiWalletSigner) is always the compose sender (redeemer) and is never used as `to`.
+            // Build mode-specific compose message
             const composeMsgBytes = buildComposeMsgForMode(
                 redeemMode,
                 pdaBytes,
@@ -398,9 +413,14 @@ task(
                 args.extraOptions = Options.newOptions()
                     .addExecutorComposeOption(0, 350_000, minMsgValue)
                     .toHex()
+            } else if (redeemMode === "instant-redeem" && !args.extraOptions) {
+                args.extraOptions = Options.newOptions()
+                    .addExecutorComposeOption(0, 100_000, 0)
+                    .toHex()
             }
             result = await sendSolana({
                 ...args,
+                dstEid: bridgeDstEid,
                 composeMsg: composeMsgHex,
                 addressLookupTables: args.addressLookupTables ? args.addressLookupTables.split(',') : [],
                 redeemType: redeemMode,
@@ -411,7 +431,7 @@ task(
 
         DebugLogger.printLayerZeroOutput(
             KnownOutputs.SENT_VIA_OFT,
-            `Successfully sent ${args.amount} tokens from ${endpointIdToNetwork(args.srcEid)} to ${endpointIdToNetwork(args.dstEid)}`
+            `Successfully sent ${args.amount} tokens from ${endpointIdToNetwork(args.srcEid)} to ${endpointIdToNetwork(outputDstEid)}`
         )
         // print the explorer link for the srcEid from metadata
         const explorerLink = await getBlockExplorerLink(args.srcEid, result.txHash)

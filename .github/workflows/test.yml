@@ -25,8 +25,12 @@ jobs:
           cache: pnpm
       - uses: oven-sh/setup-bun@v2
       - run: pnpm install --frozen-lockfile
+      - name: Check signer-message grammar
+        run: pnpm check:signer-grammar
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
       - name: Show Forge version
         run: |
           forge --version
@@ -38,9 +42,17 @@ jobs:
 
       - name: Run Forge build
         run: |
-          forge build contracts --sizes --skip contracts/operators/old/*
+          forge build contracts --sizes
           forge build test
         id: build
+
+      - name: Check repository layout
+        run: pnpm repo:check
+        id: repo-check
+
+      - name: Check solana-lz-abi templates match forge output
+        run: pnpm lz-abi:check
+        id: lz-abi-check
 
       - name: Run Forge unit tests
         run: |
@@ -52,10 +64,35 @@ jobs:
           forge test --match-contract 'BundleCalldataLib|BundleBuildLib|MorphoMarketLib|MockMorphoScenarios'
         id: mock-test
 
+      - name: Run Solana task unit tests
+        run: pnpm test:solana
+        id: solana-task-test
+
       - name: Run Forge fork tests
         env:
           ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
           PLUME_RPC_URL: ${{ secrets.PLUME_RPC_URL }}
+          RUN_COMPOSER_UPGRADE_FORK_TEST: "true"
         run: |
-          forge test --fork-url $PLUME_RPC_URL --no-match-contract 'AuthUpgradeable|BundleCalldataLib|BundleBuildLib|MorphoMarketLib|MockMorphoScenarios'
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess
+
+          filters = ['--no-match-contract', 'AuthUpgradeable|BundleCalldataLib|BundleBuildLib|MorphoMarketLib|MockMorphoScenarios|DeploymentForkTest|DeploymentStateTest|FeeSimGoldenTest|MorphoDeploymentForkTest|UpgradeStorageCheckTest']
+          tests = json.loads(subprocess.check_output(['forge', 'test', '--list', '--json', *filters]))
+          env_paths = [path for path in tests if 'vm.setEnv(' in pathlib.Path(path).read_text()]
+          command = ['forge', 'test', '--fork-url', os.environ['PLUME_RPC_URL'], *filters]
+
+          # vm.setEnv changes process-wide state, even across separate test EVMs.
+          # Keep regular suites parallel, but give each environment-mutating test its own process.
+          exclusions = ['--no-match-path', '{' + ','.join(env_paths) + '}'] if env_paths else []
+          subprocess.run([*command, *exclusions], check=True)
+          for path in env_paths:
+              for contract, names in tests[path].items():
+                  for name in names:
+                      subprocess.run([
+                          *command, '--match-path', path,
+                          '--match-contract', '^' + re.escape(contract) + '$',
+                          '--match-test', '^' + re.escape(name) + r'(\(.*\))?$',
+                      ], check=True)
+          PY
         id: fork-test

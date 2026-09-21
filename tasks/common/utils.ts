@@ -2,6 +2,7 @@ import { safeFetchMetadataFromSeeds } from '@metaplex-foundation/mpl-token-metad
 import { fromWeb3JsPublicKey, toWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { TOKEN_2022_PROGRAM_ID, getTokenMetadata } from '@solana/spl-token'
 import { Connection, PublicKey } from '@solana/web3.js'
+import { Contract } from 'ethers'
 
 import { OmniPoint } from '@layerzerolabs/devtools'
 import { createConnectedContractFactory } from '@layerzerolabs/devtools-evm-hardhat'
@@ -35,6 +36,21 @@ export enum MSG_TYPE {
     SEND_AND_CALL = 2,
 }
 
+// The standalone Solana deploy package intentionally ships no compiled EVM
+// artifacts and only has hardhat-deploy records for Plume. Give the EVM OApp
+// SDK the interface it needs directly so address-based peers on every other
+// network do not depend on a local deployment record.
+const EVM_OAPP_ABI = [
+    'function owner() view returns (address)',
+    'function transferOwnership(address newOwner)',
+    'function endpoint() view returns (address)',
+    'function peers(uint32 eid) view returns (bytes32)',
+    'function setPeer(uint32 eid, bytes32 peer)',
+    'function setDelegate(address delegate)',
+    'function enforcedOptions(uint32 eid, uint16 msgType) view returns (bytes)',
+    'function setEnforcedOptions((uint32 eid, uint16 msgType, bytes options)[] enforcedOptions)',
+]
+
 /**
  * Given a srcEid and on-chain tx hash, return
  * `https://…blockExplorers[0].url/tx/<txHash>`, or undefined.
@@ -60,7 +76,18 @@ export const createSdkFactory = (
     connectionFactory = createSolanaConnectionFactory()
 ) => {
     // To create a EVM/Solana SDK factory we need to merge the EVM and the Solana factories into one
-    const evmSdkFactory = createOAppFactory(createConnectedContractFactory())
+    const evmSdkFactory = createOAppFactory(
+        createConnectedContractFactory(async (point) => {
+            if (!point.address) {
+                throw new Error(`Missing EVM OApp address for endpoint ${point.eid}`)
+            }
+
+            return {
+                eid: point.eid,
+                contract: new Contract(point.address, EVM_OAPP_ABI),
+            }
+        })
+    )
     const aptosSdkFactory = createAptosOAppFactory()
     const solanaSdkFactory = createOFTFactory(
         // The first parameter to createOFTFactory is a user account factory

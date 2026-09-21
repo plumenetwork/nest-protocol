@@ -1,12 +1,15 @@
 {
   "symbol": "nOPAL",
+  "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+  "ownerOverrides": { "5042": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982" },
   "name": "Nest BlackOpal LiquidStone II Vault",
   "baseAssetSymbol": "USDC",
   "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
   "vaultType": "NestVaultOFT",
   "accountantType": "NestHubAccountant",
   "vaultTypeOverrides": {
-    "480": "NestVault"
+    "480": "NestVault",
+    "43114": "NestVault"
   },
   "contracts": {
     "share": "0x119Dd7dAFf816f29D7eE47596ae5E4bdC4299165",
@@ -15,7 +18,7 @@
     "vaults": [
       {
         "assetSymbol": "USDC",
-        "chains": [1, 98866, 480],
+        "chains": [1, 98866, 480, 43114, 5042],
         "address": "0xD258029cF5a177e3306E09Fbea63424543a505c0",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000",
@@ -46,8 +49,8 @@
     "operatorRegistry": "0xFAbD98aEe7F100ff31632B5d8124488a39a26835",
     "redeemOperator": "0xD9B432376cB18c99716865e540bb32c67d795440",
     "cctpRelayer": "0x7de01896d36Bea9CF072Ac64E41685418941d8bE",
-    "seizer": "0xf6c00A6aC137680A5e9ECC7aB342dF2c4D190510",
-    "blacklistHook": "0x7bc28c4085933bC3fc84DDBebE1C4009DdDE96F4",
+    "seizer": "0x6D509A5c68e7Ca9D633C9ACb5e077B66e123Ec54",
+    "blacklistHook": "0xB9B833B35640428e09c2D450f36Ac4f91F58CB47",
     "commonRolesAuthority": "0x93786916e1EE5913A45662a5986559f5785a5BA4"
   },
 
@@ -58,7 +61,7 @@
     "allowedExchangeRateChangeUpper": 1000500,
     "allowedExchangeRateChangeLower": 999500,
     "minimumUpdateDelayInSeconds": 3600,
-    "managementFee": 1000,
+    "managementFee": 5000,
     "performanceFee": 50000,
     "hurdleRate": 80000
   },
@@ -77,8 +80,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -86,7 +94,12 @@
   },
 
   "roles": {
-    "owner": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],
@@ -104,7 +117,12 @@
   },
   "saltOverrides": {
     "NestVaultOFT-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00d294ef577e6a7a4ef09028",
-    "NestVaultComposer-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00ef67a9d5bcac93e2dec5c7" 
+    "NestVaultComposer-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00ef67a9d5bcac93e2dec5c7",
+    "NestVault-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00d294ef577e6a7a4ef09028",
+    "NestShareOFT": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00b526a205f7a5b51124615e",
+    "NestAccountant": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00606075cf8c166b2dd098df",
+    "RolesAuthority": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00732ae99e556a0b07b93dcf"
   },
-  "peers": [98866, 1, 56, 480, 9745, 101]
+  "peerOverrides": { "5042": [98866, 1, 56, 480, 9745, 43114] },
+  "peers": [98866, 1, 56, 480, 9745, 101, 43114, 5042]
 }

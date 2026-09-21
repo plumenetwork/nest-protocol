@@ -1,5 +1,6 @@
 {
   "symbol": "nTEST",
+  "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
   "name": "Nest Test Vault",
   "baseAssetSymbol": "USDC",
   "vaultType": "NestVaultOFT",
@@ -24,7 +25,7 @@
         "address": "0xe56Ac80c3B664b3d5fa43c1ea08f27389786CbC3",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000",
-        "composer": "0x1daF84Ae51CcD1D9cdeDfF31e689cD2aA7579034"
+        "composer": "0x0000000000000000000000000000000000000000"
       }
     ]
   },
@@ -33,12 +34,14 @@
     "predicateProxy": "0xfC0c4222B3A0c9B060C0B959DEc62442036b9035",
     "operatorRegistry": "0x95f4A65A49252F37F778fCd3df6C0b45A390Cc72",
     "redeemOperator": "0x9196D31e2E641C21AE45AeF55992e5E6E50B4eE6",
-    "cctpRelayer": "0x7de01896d36Bea9CF072Ac64E41685418941d8bE",
+    "cctpRelayer": "0x45bD35BEb70a3F0937f9701fE49AC1842dCc97b3",
     "seizer": "0x0000000000000000000000000000000000000000",
     "blacklistHook": "0x0000000000000000000000000000000000000000"
   },
 
   "commonOverrides": {
+    "complianceProxy": "0xF325E0f939963b42A22538B98b30E1CAeB2C37bA",
+    "cctpRelayer": "0x45bD35BEb70a3F0937f9701fE49AC1842dCc97b3",
     "nestAdapter": "0x0000000000000000000000000000000000000000",
     "nestUnlooper": "0x0000000000000000000000000000000000000000"
   },
@@ -55,17 +58,28 @@
   },
 
   "vaultFees": {
-    "deposit":           { "rate": 500, "flat": 100000 },
-    "redemption":        { "rate": 200, "flat": 100000 },
+    "deposit":           { "rate": 500, "flat": 100 },
+    "redemption":        { "rate": 200, "flat": 100 },
     "instantRedemption": { "rate": 1000,   "flat": 0      }
+  },
+
+  "vaultMaxFees": {
+    "deposit":           { "rate": 200000, "flat": 100000 },
+    "redemption":        { "rate": 200000, "flat": 1000 },
+    "instantRedemption": { "rate": 200000, "flat": 100 }
   },
 
   "vaultParams": {
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": "x-managed-policy-8a45c2ae80a41dac8475d7b73a432c95"
+    }
   },
 
   "composerParams": {
@@ -73,7 +87,6 @@
   },
 
   "roles": {
-    "owner": "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e",
     "KEEPER_ROLE": [
       "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e"
     ],

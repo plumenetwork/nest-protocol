@@ -1,0 +1,12 @@
+{
+  "chainId": 5042,
+  "v1": {
+    "serviceManager": "0x0000000000000000000000000000000000000000",
+    "defaultPolicyID": ""
+  },
+  "v2": {
+    "apiChain": "arc-mainnet",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  },
+  "v2Only": true
+}

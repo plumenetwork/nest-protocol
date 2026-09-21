@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 // contracts
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 import {NestShareOFT} from "contracts/NestShareOFT.sol";
 
@@ -13,7 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IRateProvider} from "contracts/interfaces/IRateProvider.sol";
 
 // libraries
-import {NestVaultAccountingLogic} from "contracts/libraries/nest-vault/NestVaultAccountingLogic.sol";
+import {NestVaultAccountingLogic} from "contracts/libraries/NestVaultAccountingLogic.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {FixedPointMathLib} from "@solmate/utils/FixedPointMathLib.sol";
@@ -547,53 +547,19 @@ contract NestHubAccountant is Initializable, AuthUpgradeable {
     }
 
     /// @notice Update the management fee to a new value
-    /// @dev    Accrues elapsed management fees under the previous rate before applying the new rate.
-    ///         If time has advanced, the normal exchange-rate update delay must have elapsed. A fee change
-    ///         may follow `updateExchangeRate` in the same timestamp because no additional accrual occurs.
-    /// @dev    Operators should call `updateExchangeRate` before changing the management fee.
-    ///         This function accrues old-fee charges using the stale `lastGrossRate`,
-    ///         so changing the fee during a drawdown can overaccrue management fees for the elapsed interval.
-    /// @dev    The accrued fee reduces `exchangeRate` and is subject to the same `allowedExchangeRateChangeLower`
-    ///         bound as `updateExchangeRate`; if a long elapsed interval accrues a haircut large enough to
-    ///         breach it, this call reverts with `RateOutOfBounds`. Call `updateExchangeRate` first to drain
-    ///         the accrued fee within bounds, then retry.
-    /// @param  _managementFee    uint32  The new management fee, expressed in basis points where 1e6 = 100%
-    /// @param  _totalShareSupply uint128 The global total share supply across all chains
-    function updateManagementFee(uint32 _managementFee, uint128 _totalShareSupply) external virtual requiresAuth {
-        NestAccountantStorage storage $ = _getNestAccountantStorage();
-        AccountantState storage state = $.accountantState;
+    /// @dev    Does not accrue management fees. Any fees between `lastUpdateTimestamp` and the current timestamp
+    ///         are forfeited when the timestamp is advanced. Reverts if the checkpoint is older than
+    ///         `UPDATE_DELAY_CAP`. Operators should call `updateExchangeRate` immediately before changing the
+    ///         management fee to minimize forfeited fees.
+    /// @param  _managementFee uint32 The new management fee, expressed in basis points where 1e6 = 100%
+    function updateManagementFee(uint32 _managementFee) external virtual requiresAuth {
+        AccountantState storage state = _getNestAccountantStorage().accountantState;
         uint32 _oldFee = state.managementFee;
-
-        // Accrue elapsed management fees under the old fee before switching
-        uint64 _currentTime = uint64(block.timestamp);
-        uint256 _timeDelta = _currentTime - state.lastUpdateTimestamp;
-        if (_timeDelta > 0) {
-            if (_currentTime < state.lastUpdateTimestamp + state.minimumUpdateDelayInSeconds) {
-                revert Errors.MinimumUpdateDelayNotPassed();
-            }
-
-            uint256 _totalShares = uint256(_totalShareSupply);
-            if (_totalShareSupply < IERC20(SHARE).totalSupply()) revert Errors.TotalSupplyBelowLocal();
-
-            if (_oldFee > 0 && _totalShares > 0) {
-                uint256 _oneShare = 10 ** ERC20(SHARE).decimals();
-                // Charge on and deduct from the current net rate.
-                uint256 _oldRate = uint256(state.exchangeRate);
-                uint256 _newRate = _accrueManagementFees(_oldRate, _totalShares, _oneShare);
-                if (_newRate < _oldRate.mulDivDown(state.allowedExchangeRateChangeLower, DENOMINATOR)) {
-                    revert Errors.RateOutOfBounds();
-                }
-                if (_newRate != _oldRate) {
-                    state.exchangeRate = _newRate.toUint96();
-                    emit ExchangeRateUpdated(_oldRate.toUint96(), _newRate.toUint96(), _currentTime);
-                }
-            }
-
-            // Always checkpoint so enabling a fee from 0 doesn't accrue retroactively
-            state.lastUpdateTimestamp = _currentTime;
-            state.totalSharesLastUpdate = _totalShares.toUint128();
+        if (_managementFee == _oldFee) revert Errors.SameValue();
+        if (block.timestamp > uint256(state.lastUpdateTimestamp) + UPDATE_DELAY_CAP) {
+            revert Errors.UpdateDelayTooLarge();
         }
-
+        state.lastUpdateTimestamp = uint64(block.timestamp);
         _setManagementFee(_managementFee);
         emit ManagementFeeUpdated(_oldFee, _managementFee);
     }

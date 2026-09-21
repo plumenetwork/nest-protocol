@@ -2,13 +2,13 @@
 pragma solidity ^0.8.30;
 
 // libraries
-import {TypedMemView} from "contracts/libraries/vendor/cctp/TypedMemView.sol";
-import {MessageV2} from "contracts/libraries/vendor/cctp/MessageV2.sol";
-import {BurnMessageV2} from "contracts/libraries/vendor/cctp/BurnMessageV2.sol";
-import {AddressUtils} from "contracts/libraries/vendor/cctp/AddressUtils.sol";
+import {TypedMemView} from "contracts/vendor/cctp/libraries/TypedMemView.sol";
+import {MessageV2} from "contracts/vendor/cctp/libraries/MessageV2.sol";
+import {BurnMessageV2} from "contracts/vendor/cctp/libraries/BurnMessageV2.sol";
+import {AddressUtils} from "contracts/vendor/cctp/libraries/AddressUtils.sol";
 
 // interfaces
-import {IMessageHandlerV2} from "contracts/interfaces/vendor/cctp/IMessageHandlerV2.sol";
+import {IMessageHandlerV2} from "contracts/vendor/cctp/interfaces/IMessageHandlerV2.sol";
 
 contract MockMessageTransmitterV2 {
     // ============ Constants ============

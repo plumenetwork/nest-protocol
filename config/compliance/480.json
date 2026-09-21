@@ -1,0 +1,11 @@
+{
+  "chainId": 480,
+  "v1": {
+    "serviceManager": "0x4D33A9abab16E48d99032b422C453d4f6AA36463",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "worldchain",
+    "predicateRegistry": "0xe15a8Ca5BD8464283818088c1760d8f23B6a216E"
+  }
+}

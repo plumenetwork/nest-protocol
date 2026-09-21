@@ -1,0 +1,11 @@
+{
+  "chainId": 43114,
+  "v1": {
+    "serviceManager": "0x10C4d4A3dA168b8d26370a8F172C16429f33bAb6",
+    "defaultPolicyID": "x-nest-prod-006"
+  },
+  "v2": {
+    "apiChain": "",
+    "predicateRegistry": "0x0000000000000000000000000000000000000000"
+  }
+}

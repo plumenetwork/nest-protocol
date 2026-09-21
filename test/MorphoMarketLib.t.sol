@@ -8,8 +8,8 @@ import {ORACLE_PRICE_SCALE} from "@morpho/libraries/ConstantsLib.sol";
 import {MarketParamsLib} from "@morpho/libraries/MarketParamsLib.sol";
 import {SharesMathLib} from "@morpho/libraries/SharesMathLib.sol";
 
-import {MorphoMarketLib} from "contracts/morpho/libraries/MorphoMarketLib.sol";
-import {Position, PositionMetrics} from "contracts/morpho/types/BundleTypes.sol";
+import {MorphoMarketLib} from "contracts/integrations/morpho/libraries/MorphoMarketLib.sol";
+import {Position, PositionMetrics} from "contracts/integrations/morpho/types/BundleTypes.sol";
 
 contract MockMorphoForMarketLib {
     mapping(bytes32 => MorphoPosition) internal _positions;

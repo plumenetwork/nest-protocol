@@ -34,12 +34,20 @@ import {
     ERC20PermitUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {BlacklistHook} from "contracts/hooks/BlacklistHook.sol";
+import {BlacklistHook} from "contracts/compliance/hooks/BlacklistHook.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Errors} from "contracts/types/Errors.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+
+contract PayableTarget {
+    uint256 public totalReceived;
+
+    function deposit() external payable {
+        totalReceived += msg.value;
+    }
+}
 
 contract NestShareOFTTest is TestHelperOz5 {
     using OptionsBuilder for bytes;
@@ -83,19 +91,23 @@ contract NestShareOFTTest is TestHelperOz5 {
         permitOwner = vm.addr(permitOwnerKey);
 
         aOFT = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[aEid])),
-                abi.encodeWithSelector(NestShareOFT.initialize.selector, "aOFT", "aOFT", address(this), address(this))
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[aEid])),
+                    abi.encodeWithSelector(
+                        NestShareOFT.initialize.selector, "aOFT", "aOFT", address(this), address(this)
+                    )
+                ))
         );
 
         bOFT = MockNestShareOFT(
-            _deployContractAndProxy(
-                type(MockNestShareOFT).creationCode,
-                abi.encode(address(endpoints[bEid])),
-                abi.encodeWithSelector(NestShareOFT.initialize.selector, "bOFT", "bOFT", address(this), address(this))
-            )
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode,
+                    abi.encode(address(endpoints[bEid])),
+                    abi.encodeWithSelector(
+                        NestShareOFT.initialize.selector, "bOFT", "bOFT", address(this), address(this)
+                    )
+                ))
         );
 
         // set permissive mock authority functions public
@@ -203,6 +215,55 @@ contract NestShareOFTTest is TestHelperOz5 {
         assertEq(aOFT.token(), address(aOFT));
         assertEq(bOFT.token(), address(bOFT));
         assertEq(cOFTAdapter.token(), address(cERC20Mock));
+        assertEq(aOFT.version(), "1.2.0");
+    }
+
+    function test_receive_acceptsEth() public {
+        (bool success,) = address(aOFT).call{value: 1 ether}("");
+
+        assertTrue(success);
+        assertEq(address(aOFT).balance, 1 ether);
+    }
+
+    function test_manage_forwardsEthFromMsgValue() public {
+        PayableTarget target = new PayableTarget();
+
+        aOFT.manage{value: 1 ether}(address(target), abi.encodeCall(PayableTarget.deposit, ()), 1 ether);
+
+        assertEq(target.totalReceived(), 1 ether);
+        assertEq(address(aOFT).balance, 0);
+    }
+
+    function test_manageBatch_forwardsEthFromMsgValue() public {
+        PayableTarget firstTarget = new PayableTarget();
+        PayableTarget secondTarget = new PayableTarget();
+        address[] memory targets = new address[](2);
+        targets[0] = address(firstTarget);
+        targets[1] = address(secondTarget);
+        bytes[] memory data = new bytes[](2);
+        data[0] = abi.encodeCall(PayableTarget.deposit, ());
+        data[1] = abi.encodeCall(PayableTarget.deposit, ());
+        uint256[] memory values = new uint256[](2);
+        values[0] = 1 ether;
+        values[1] = 2 ether;
+
+        aOFT.manage{value: 3 ether}(targets, data, values);
+
+        assertEq(firstTarget.totalReceived(), 1 ether);
+        assertEq(secondTarget.totalReceived(), 2 ether);
+        assertEq(address(aOFT).balance, 0);
+    }
+
+    function test_manage_forwardsPreviouslyRetainedMsgValue() public {
+        PayableTarget target = new PayableTarget();
+        bytes memory data = abi.encodeCall(PayableTarget.deposit, ());
+        aOFT.manage{value: 1 ether}(address(target), data, 0);
+        assertEq(address(aOFT).balance, 1 ether);
+
+        aOFT.manage(address(target), data, 1 ether);
+
+        assertEq(target.totalReceived(), 1 ether);
+        assertEq(address(aOFT).balance, 0);
     }
 
     function test_initialize_revertsWhenOwnerZero() public {
@@ -223,7 +284,9 @@ contract NestShareOFTTest is TestHelperOz5 {
 
     function test_initialize_reverts_when_name_empty() public {
         MockNestShareOFT uninitialized = MockNestShareOFT(
-            _deployContractAndProxy(type(MockNestShareOFT).creationCode, abi.encode(address(endpoints[aEid])), "")
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode, abi.encode(address(endpoints[aEid])), ""
+                ))
         );
 
         vm.expectRevert(Errors.EmptyNameOrSymbol.selector);
@@ -232,7 +295,9 @@ contract NestShareOFTTest is TestHelperOz5 {
 
     function test_initialize_reverts_when_symbol_empty() public {
         MockNestShareOFT uninitialized = MockNestShareOFT(
-            _deployContractAndProxy(type(MockNestShareOFT).creationCode, abi.encode(address(endpoints[aEid])), "")
+            payable(_deployContractAndProxy(
+                    type(MockNestShareOFT).creationCode, abi.encode(address(endpoints[aEid])), ""
+                ))
         );
 
         vm.expectRevert(Errors.EmptyNameOrSymbol.selector);
@@ -782,7 +847,7 @@ contract NestShareOFTTest is TestHelperOz5 {
         vm.prank(proxyAdmin);
         admin.upgradeAndCall(ITransparentUpgradeableProxy(proxy), address(newImpl), "");
 
-        MockNestShareOFT upgraded = MockNestShareOFT(proxy);
+        MockNestShareOFT upgraded = MockNestShareOFT(payable(proxy));
         upgraded.enter(address(0), ERC20(address(0)), 0, permitOwner, initialBalance);
 
         uint256 value = 1 ether;

@@ -16,11 +16,15 @@ import {AtomicQueue} from "@boring-vault/src/atomic-queue/AtomicQueue.sol";
 import {Call, IBundler3} from "contracts/vendor/bundler3/interfaces/IBundler3.sol";
 import {NestVault} from "contracts/NestVault.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
-import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
-import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
-import {NestBundler} from "contracts/morpho/NestBundler.sol";
-import {NestVaultPredicateProxy, PredicateMessage} from "contracts/NestVaultPredicateProxy.sol";
-import {BundleCalldataLib} from "contracts/morpho/libraries/BundleCalldataLib.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {MorphoAdapter} from "contracts/integrations/morpho/MorphoAdapter.sol";
+import {NestBundler} from "contracts/integrations/morpho/NestBundler.sol";
+import {NestVaultPredicateProxy} from "contracts/compliance/NestVaultPredicateProxy.sol";
+import {ComplianceProxy} from "contracts/compliance/ComplianceProxy.sol";
+import {IComplianceHook} from "contracts/compliance/interfaces/IComplianceHook.sol";
+import {MockComplianceHook} from "test/mock/MockComplianceHook.sol";
+import {PredicateMessage} from "@predicate/src/interfaces/IPredicateClient.sol";
+import {BundleCalldataLib} from "contracts/integrations/morpho/libraries/BundleCalldataLib.sol";
 import {GeneralAdapter1} from "contracts/vendor/morpho/GeneralAdapter1.sol";
 import {IPredicateManager} from "@predicate/src/interfaces/IPredicateManager.sol";
 import {
@@ -30,8 +34,8 @@ import {
     RouteInput,
     Position,
     UserIntent
-} from "contracts/morpho/types/BundleTypes.sol";
-import {NestBundleErrors} from "contracts/morpho/types/Errors.sol";
+} from "contracts/integrations/morpho/types/BundleTypes.sol";
+import {NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
 import {IMorpho, Id, Market, MarketParams, Position as MorphoPosition} from "@morpho/interfaces/IMorpho.sol";
 import {IOracle} from "@morpho/interfaces/IOracle.sol";
 import {ORACLE_PRICE_SCALE} from "@morpho/libraries/ConstantsLib.sol";
@@ -39,7 +43,7 @@ import {MathLib} from "@morpho/libraries/MathLib.sol";
 import {MarketParamsLib} from "@morpho/libraries/MarketParamsLib.sol";
 import {SharesMathLib} from "@morpho/libraries/SharesMathLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {NestShareMathLib} from "contracts/morpho/libraries/NestShareMathLib.sol";
+import {NestShareMathLib} from "contracts/integrations/morpho/libraries/NestShareMathLib.sol";
 
 contract NestBundlerIntegrationTest is Test {
     using MathLib for uint256;
@@ -67,7 +71,6 @@ contract NestBundlerIntegrationTest is Test {
     uint256 internal constant UNIT = 1e6;
     uint256 internal constant USER_INITIAL_PUSD = 500 * UNIT;
     uint256 internal constant USER_SEED_DEPOSIT_ASSETS = 100 * UNIT;
-    string internal constant POLICY_ID = "TEST_POLICY_ID";
 
     address internal constant ATOMIC_SOLVER = 0x77fb098A1C28a5b50BFAdb69Ca1bEE515a7FC974;
     address internal constant ATOMIC_QUEUE = 0x220dc6d4569C1F406D532f9633D5Be5Bc86e8264;
@@ -85,7 +88,8 @@ contract NestBundlerIntegrationTest is Test {
     IBundler3 internal bundler3;
     NestAdapter internal nestAdapter;
     NestBundler internal nestBundler;
-    NestVaultPredicateProxy internal predicateProxy;
+    ComplianceProxy internal complianceProxy;
+    MockComplianceHook internal complianceHook;
     TellerWithMultiAssetSupport internal teller;
     NestVault internal forkVault;
     MarketParams internal marketParams;
@@ -116,14 +120,14 @@ contract NestBundlerIntegrationTest is Test {
         assertGt(market.totalSupplyAssets, 0, "nALPHA/pUSD market not found");
 
         nestAdapter = new NestAdapter(BUNDLER3, MORPHO, WRAPPED_NATIVE_PLACEHOLDER);
-        _deployPredicateProxy();
+        _deployComplianceProxy();
         _deployForkNestVault();
 
         nestBundler = new NestBundler(
             MORPHO,
             BUNDLER3,
             address(nestAdapter),
-            address(predicateProxy),
+            address(complianceProxy),
             PROD_LEGACY_TELLER_PREDICATE_PROXY,
             ATOMIC_SOLVER,
             ATOMIC_QUEUE
@@ -180,7 +184,7 @@ contract NestBundlerIntegrationTest is Test {
         UserIntent memory intent =
             _getTargetIntent(type(uint256).max, type(uint256).max, targetBorrow, reducedCollateral);
 
-        PredicateMessage memory emptyMsg = _getEmptyPredicateMessage();
+        bytes memory emptyData = _getEmptyComplianceData();
 
         // execute the target position with all route combinations possible
         for (uint8 flags; flags < 8; ++flags) {
@@ -192,7 +196,7 @@ contract NestBundlerIntegrationTest is Test {
             if (route.legacyRedemption && route.instantRedeem) {
                 vm.expectRevert(NestBundleErrors.LegacyRedemptionCannotUseInstantRedeem.selector);
                 nestBundler.getBundle(
-                    intent, route, emptyMsg, INestVaultCore(address(forkVault)), address(teller), user, user
+                    intent, route, emptyData, INestVaultCore(address(forkVault)), address(teller), user, user
                 );
                 vm.revertToState(snapshotId);
                 continue;
@@ -200,7 +204,7 @@ contract NestBundlerIntegrationTest is Test {
 
             if (route.instantRedeem) {
                 Bundle memory bundle = nestBundler.getBundle(
-                    intent, route, emptyMsg, INestVaultCore(address(forkVault)), address(teller), user, user
+                    intent, route, emptyData, INestVaultCore(address(forkVault)), address(teller), user, user
                 );
                 Call[] memory calls = BundleCalldataLib.getBundleCalls(bundle);
 
@@ -208,10 +212,10 @@ contract NestBundlerIntegrationTest is Test {
                 bundler3.multicall(calls);
             } else {
                 Bundle memory syncBundle = nestBundler.getSyncBundle(
-                    intent, route, emptyMsg, INestVaultCore(address(forkVault)), address(teller), user
+                    intent, route, emptyData, INestVaultCore(address(forkVault)), address(teller), user
                 );
                 Bundle memory asyncBundle = nestBundler.getAsyncBundle(
-                    intent, route, emptyMsg, INestVaultCore(address(forkVault)), address(teller), user, solver
+                    intent, route, emptyData, INestVaultCore(address(forkVault)), address(teller), user, solver
                 );
 
                 if (_hasBundleActions(syncBundle)) {
@@ -250,7 +254,7 @@ contract NestBundlerIntegrationTest is Test {
         Bundle memory bundle = nestBundler.getBundle(
             _getTargetIntent(type(uint256).max, seedShares, targetBorrow, targetCollateral),
             _getRoute(false, false, false),
-            _getEmptyPredicateMessage(),
+            _getEmptyComplianceData(),
             INestVaultCore(address(forkVault)),
             address(teller),
             user,
@@ -269,14 +273,27 @@ contract NestBundlerIntegrationTest is Test {
         assertEq(collateral, targetCollateral, "collateral should be non-zero");
     }
 
-    function _deployPredicateProxy() internal {
-        predicateProxy = NestVaultPredicateProxy(PROD_NEST_VAULT_PREDICATE_PROXY);
-        assertGt(address(predicateProxy).code.length, 0, "prod predicate proxy not deployed");
+    function _deployComplianceProxy() internal {
+        complianceHook = new MockComplianceHook();
 
-        address predicateManager = predicateProxy.getPredicateManager();
+        ComplianceProxy implementation = new ComplianceProxy();
+        address proxy = address(
+            new TransparentUpgradeableProxy(
+                address(implementation),
+                proxyAdmin,
+                abi.encodeCall(ComplianceProxy.initialize, (address(this), IComplianceHook(address(complianceHook))))
+            )
+        );
+        complianceProxy = ComplianceProxy(proxy);
+
+        // The legacy teller deposit route still validates against the live predicate stack: mock its manager.
+        NestVaultPredicateProxy prodProxy = NestVaultPredicateProxy(PROD_NEST_VAULT_PREDICATE_PROXY);
+        assertGt(address(prodProxy).code.length, 0, "prod predicate proxy not deployed");
+        address predicateManager = prodProxy.getPredicateManager();
         vm.mockCall(predicateManager, abi.encodeWithSelector(PREDICATE_VALIDATE_SIGNATURES_SELECTOR), abi.encode(true));
 
-        address proxyAuthority = address(predicateProxy.authority());
+        // Blanket-authorize canCall checks on the shared roles authority, as the prod-proxy setup did.
+        address proxyAuthority = address(prodProxy.authority());
         vm.mockCall(proxyAuthority, abi.encodeWithSelector(Authority.canCall.selector), abi.encode(true));
     }
 
@@ -298,9 +315,7 @@ contract NestBundlerIntegrationTest is Test {
 
         RolesAuthority rolesAuthority = RolesAuthority(address(BoringVault(payable(NALPHA)).authority()));
         forkVault.setAuthority(Authority(address(rolesAuthority)));
-        if (address(predicateProxy) != PROD_NEST_VAULT_PREDICATE_PROXY) {
-            predicateProxy.setAuthority(Authority(address(rolesAuthority)));
-        }
+        complianceProxy.setAuthority(Authority(address(rolesAuthority)));
 
         address rolesOwner = rolesAuthority.owner();
         vm.startPrank(rolesOwner);
@@ -314,28 +329,26 @@ contract NestBundlerIntegrationTest is Test {
         rolesAuthority.setPublicCapability(address(forkVault), INestVaultCore.fulfillRedeem.selector, true);
         rolesAuthority.setPublicCapability(address(forkVault), INestVaultCore.updateRedeem.selector, true);
         rolesAuthority.setPublicCapability(address(forkVault), IERC4626.withdraw.selector, true);
-        if (address(predicateProxy) != PROD_NEST_VAULT_PREDICATE_PROXY) {
-            rolesAuthority.setPublicCapability(
-                address(predicateProxy),
-                bytes4(keccak256("deposit(address,uint256,address,address,(string,uint256,address[],bytes[]))")),
-                true
-            );
-            rolesAuthority.setPublicCapability(
-                address(predicateProxy),
-                bytes4(keccak256("mint(address,uint256,address,address,(string,uint256,address[],bytes[]))")),
-                true
-            );
-            uint8 predicateProxyAdapterRole = 7;
-            rolesAuthority.setRoleCapability(
-                predicateProxyAdapterRole,
-                address(predicateProxy),
-                bytes4(
-                    keccak256("deposit(address,uint256,address,address,bytes32,(string,uint256,address[],bytes[]))")
-                ),
-                true
-            );
-            rolesAuthority.setUserRole(address(nestAdapter), predicateProxyAdapterRole, true);
-        }
+        rolesAuthority.setPublicCapability(
+            address(complianceProxy), bytes4(keccak256("deposit(address,uint256,address,address,bytes)")), true
+        );
+        rolesAuthority.setPublicCapability(
+            address(complianceProxy), bytes4(keccak256("mint(address,uint256,address,address,bytes)")), true
+        );
+        uint8 complianceProxyAdapterRole = 16;
+        rolesAuthority.setRoleCapability(
+            complianceProxyAdapterRole,
+            address(complianceProxy),
+            bytes4(keccak256("genericUserCheck(address,bytes)")),
+            true
+        );
+        rolesAuthority.setRoleCapability(
+            complianceProxyAdapterRole,
+            address(complianceProxy),
+            bytes4(keccak256("genericUserCheck(address,bytes32,bytes)")),
+            true
+        );
+        rolesAuthority.setUserRole(address(nestAdapter), complianceProxyAdapterRole, true);
         vm.stopPrank();
 
         assertEq(INestVaultCore(address(forkVault)).asset(), PUSD, "forkVault asset mismatch");
@@ -424,14 +437,23 @@ contract NestBundlerIntegrationTest is Test {
         returns (RouteInput memory route)
     {
         route = RouteInput({
-            legacyRedemption: legacyRedemption, legacyDeposit: legacyDeposit, instantRedeem: instantRedeem
+            legacyRedemption: legacyRedemption,
+            legacyDeposit: legacyDeposit,
+            instantRedeem: instantRedeem,
+            compliantRedemption: false
         });
     }
 
-    function _getEmptyPredicateMessage() internal pure returns (PredicateMessage memory predicateMessage) {
-        predicateMessage = PredicateMessage({
-            taskId: "", expireByTime: type(uint256).max, signerAddresses: new address[](0), signatures: new bytes[](0)
-        });
+    /// @dev Legacy routes decode this as a `PredicateMessage`; modern routes treat it as opaque bytes.
+    function _getEmptyComplianceData() internal pure returns (bytes memory) {
+        return abi.encode(
+            PredicateMessage({
+                taskId: "",
+                expireByTime: type(uint256).max,
+                signerAddresses: new address[](0),
+                signatures: new bytes[](0)
+            })
+        );
     }
 
     function _getPosition(address owner) internal view returns (uint256 borrowAssets, uint256 collateral) {

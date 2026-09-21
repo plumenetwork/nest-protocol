@@ -1,0 +1,649 @@
+{
+  "scope": "Code at the three canonical CREATE3 pairs, getMinDelay and protocol hasRole(DEFAULT_ADMIN_ROLE, admin) at the recorded block on each chain. Deployment configs keep bootstrap delays; observed live delays below are not deployment inputs.",
+  "chains": [
+    {
+      "chain": 1,
+      "block": 25939757,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "604800",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "1209600",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000",
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 42161,
+      "block": 503362615,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 43114,
+      "block": 94854298,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "60",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 480,
+      "block": 34810289,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "604800",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "1209600",
+          "protocolDelay": "30",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 5042,
+      "block": 19966411,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 56,
+      "block": 120876730,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "604800",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "60",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000",
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 8453,
+      "block": 51083435,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "604800",
+          "protocolDelay": "172800",
+          "adminHandoff": true
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 9745,
+      "block": 32015651,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "604800",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "60",
+          "protocolDelay": "30",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000",
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": false,
+          "protocolDeployed": false
+        }
+      }
+    },
+    {
+      "chain": 98866,
+      "block": 92334750,
+      "pairs": {
+        "general": {
+          "admin": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "protocol": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "60",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "veto": {
+          "admin": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "protocol": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "1209600",
+          "protocolDelay": "172800",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+              ],
+              "PROPOSER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000",
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ],
+              "CANCELLER_ROLE": [
+                "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+              ]
+            }
+          }
+        },
+        "test": {
+          "admin": "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+          "protocol": "0xA0B8fd3Dade4e52425199Aa8c09ca835a55Ad056",
+          "adminDeployed": true,
+          "protocolDeployed": true,
+          "adminDelay": "60",
+          "protocolDelay": "60",
+          "adminHandoff": true,
+          "verifiedRoleHolders": {
+            "admin": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+                "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0"
+              ],
+              "PROPOSER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+              ]
+            },
+            "protocol": {
+              "DEFAULT_ADMIN_ROLE": [
+                "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0"
+              ],
+              "PROPOSER_ROLE": [
+                "0xA8FCCF45A12F4b9BaaD683c0388A78BB902d737D",
+                "0x1B9557FB0831ba882fd915ff71F6eFb9dbcDf831"
+              ],
+              "EXECUTOR_ROLE": [
+                "0x0000000000000000000000000000000000000000"
+              ],
+              "CANCELLER_ROLE": [
+                "0xA8FCCF45A12F4b9BaaD683c0388A78BB902d737D"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "roleVerification": "hasRole checks against the known role-holder candidate set from complete Plume and BNB RoleGranted/RoleRevoked histories, plus the deployer. Other chains were checked against this candidate set; this is not exhaustive event enumeration there. Base role checks were incomplete and omitted. No role changes were sent.",
+  "roleCandidates": [
+    "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+    "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
+    "0x0000000000000000000000000000000000000000",
+    "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+    "0xC03B33BC6684581D67B7d2AB6b9920B9A88557d0",
+    "0xA8FCCF45A12F4b9BaaD683c0388A78BB902d737D",
+    "0x1B9557FB0831ba882fd915ff71F6eFb9dbcDf831",
+    "0xc28e1cDfB582953fEf53f76C64426c2aC79C716e"
+  ]
+}

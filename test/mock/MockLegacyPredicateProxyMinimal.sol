@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import {Authority} from "@solmate/auth/Auth.sol";
 import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {CrossChainTellerBase} from "@boring-vault/src/base/Roles/CrossChain/CrossChainTellerBase.sol";
-import {PredicateMessage} from "contracts/NestVaultPredicateProxy.sol";
+import {PredicateMessage} from "contracts/compliance/NestVaultPredicateProxy.sol";
 
 contract MockLegacyPredicateProxyMinimal {
     Authority public authority;

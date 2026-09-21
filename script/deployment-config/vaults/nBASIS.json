@@ -1,5 +1,6 @@
 {
   "symbol": "nBASIS",
+  "owner": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
   "name": "Nest Basis Vault",
   "baseAssetSymbol": "USDC",
   "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
@@ -50,6 +51,11 @@
     "commonRolesAuthority": "0x93786916e1EE5913A45662a5986559f5785a5BA4"
   },
 
+  "commonOverrides": {
+    "blacklistHook": "0x55AE76a7aF214dC666AC64bac6C66D72d43aEdda",
+    "seizer": "0x955659c08Fc7Fe5aC1E4C9845b0b26893c218775"
+  },
+
   "accountantParams": {
     "totalSharesLastUpdate": 0,
     "payoutAddress": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
@@ -71,8 +77,13 @@
     "minRate": 1
   },
 
-  "predicateParams": {
-    "policyID": "x-nest-prod-006"
+  "compliance": {
+    "v1": {
+      "policyID": "x-nest-prod-006"
+    },
+    "v2": {
+      "verificationHash": ""
+    }
   },
 
   "composerParams": {
@@ -80,7 +91,12 @@
   },
 
   "roles": {
-    "owner": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+    "OWNER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
+    "PAUSER_ROLE": [
+      "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+    ],
     "KEEPER_ROLE": [
       "0x450545F4cC7425DDe582091a7fe9E63471Af1045"
     ],

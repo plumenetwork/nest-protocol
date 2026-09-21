@@ -2,7 +2,7 @@
 pragma solidity >=0.8.0;
 
 import {NestVault} from "contracts/NestVault.sol";
-import {Constants} from "script/Constants.sol";
+import {Constants} from "test/Constants.sol";
 
 contract MockNestVault is NestVault, Constants {
     address internal constant CANONICAL_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;

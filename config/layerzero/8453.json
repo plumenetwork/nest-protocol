@@ -1,0 +1,66 @@
+{
+  "chainId": 8453,
+  "eid": 30184,
+  "confirmations": 20,
+  "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+  "sendLib302": "0xB5320B0B3a13cC860893E2Bd79FCd7e13484Dda2",
+  "receiveLib302": "0xc70AB6f32772f59fBfc23889Caf4Ba3376C84bAf",
+  "executor": "0x2CCA08ae69E0C44b18a57Ab2A87644234dAebaE4",
+  "delegate": "0x0000000000000000000000000000000000000000",
+  "dvns": {
+    "1": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "56": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "101": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "480": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "9745": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "42161": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "43114": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    },
+    "98866": {
+      "lz": "0x9e059a54699a285714207b43B055483E78FAac25",
+      "nethermind": "0xcd37CA043f8479064e10635020c65FfC005d36f6",
+      "canary": "0x554833698Ae0FB22ECC90B01222903fD62CA4B47"
+    }
+  },
+  "enforcedOptions": {
+    "receive": {
+      "gas": 200000,
+      "msgValue": 0
+    },
+    "send": {
+      "gas": 200000,
+      "msgValue": 0
+    },
+    "compose": {
+      "gas": 250000,
+      "msgValue": 0
+    }
+  }
+}

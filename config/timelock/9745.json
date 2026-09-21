@@ -1,12 +1,85 @@
 {
-  "_comment": "nCREDIT BOOTSTRAP config: SHORT delays (30/60) for initial wiring; raise to 172800/604800 later via timelock updateDelay. protocolProposers = operational Safe (0xa08A...). adminMultisig = bootstrap council Safe (0x65c595..., rotate to a disjoint hardened council via AT before full go-live). openExecution=false (only delay is temporary). BEFORE go-live: raise delays, rotate adminMultisig to a disjoint council, add >=1 partnerCanceller.",
-  "protocolDelay": 30,
-  "adminDelay": 60,
-  "adminMultisig": "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482",
-  "openExecution": true,
-  "adminProposers": [],
-  "adminExecutors": [],
-  "protocolProposers": ["0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"],
-  "protocolExecutors": [],
-  "partnerCancellers": []
+  "general": {
+    "admin": {
+      "address": "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+      "salt": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e006285f3b548cca6ac93598d",
+      "delay": 60,
+      "roles": {
+        "admin": [
+          "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4",
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ],
+        "executor": [
+          "0x0000000000000000000000000000000000000000"
+        ],
+        "proposer": [
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ],
+        "canceller": [
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ]
+      }
+    },
+    "protocol": {
+      "address": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
+      "salt": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e008d5218a2854128e555cc13",
+      "delay": 30,
+      "roles": {
+        "admin": [
+          "0x8a8f1c32020C8C8a05E2eBd8860F3c8134f0b0e4"
+        ],
+        "executor": [
+          "0x0000000000000000000000000000000000000000"
+        ],
+        "proposer": [
+          "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+        ],
+        "canceller": [
+          "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+        ]
+      }
+    }
+  },
+  "veto": {
+    "admin": {
+      "address": "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+      "salt": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e0019e3b2507397edcaac547f",
+      "delay": 60,
+      "roles": {
+        "admin": [
+          "0x442FC59547eC00018A395C7416eD12D88a9082E6",
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ],
+        "executor": [
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ],
+        "proposer": [
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ],
+        "canceller": [
+          "0x65c595EE5Df3C91dEB44343A7Ebd99dc857C9482"
+        ]
+      }
+    },
+    "protocol": {
+      "address": "0x34e8BB9E0fa50d63BfCa1D8E83ddba0D9fD5C062",
+      "salt": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e007bbbfb254568cd435aff16",
+      "delay": 30,
+      "roles": {
+        "admin": [
+          "0x442FC59547eC00018A395C7416eD12D88a9082E6"
+        ],
+        "executor": [
+          "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982",
+          "0x0000000000000000000000000000000000000000"
+        ],
+        "proposer": [
+          "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+        ],
+        "canceller": [
+          "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982"
+        ]
+      }
+    }
+  }
 }

@@ -10,9 +10,9 @@ import {ISignatureTransfer} from "@uniswap/permit2/interfaces/ISignatureTransfer
 
 // libraries
 import {Errors} from "contracts/types/Errors.sol";
-import {NestVaultCoreTypes} from "contracts/libraries/nest-vault/NestVaultCoreTypes.sol";
-import {NestVaultRedeemLogic} from "contracts/libraries/nest-vault/NestVaultRedeemLogic.sol";
-import {NestVaultTransferLogic} from "contracts/libraries/nest-vault/NestVaultTransferLogic.sol";
+import {NestVaultCoreTypes} from "contracts/types/NestVaultCoreTypes.sol";
+import {NestVaultRedeemLogic} from "contracts/libraries/NestVaultRedeemLogic.sol";
+import {NestVaultTransferLogic} from "contracts/libraries/NestVaultTransferLogic.sol";
 
 /// @title  NestVaultPermit2
 /// @notice Optional Permit2 extension for NestVault implementations
@@ -33,7 +33,6 @@ abstract contract NestVaultPermit2 is NestVaultCore {
 
     /// @notice Requests a redeem of shares using Permit2 signature-based transfer
     /// @dev    Allows users to request redemption using Permit2 SignatureTransfer for gasless token approvals.
-    ///         Reference: https://docs.uniswap.org/contracts/permit2/reference/signature-transfer
     /// @param  _shares     uint256            The number of shares to redeem
     /// @param  _controller address            The address of the controller managing the redemption
     /// @param  _owner      address            The owner of the shares being redeemed
@@ -58,7 +57,6 @@ abstract contract NestVaultPermit2 is NestVaultCore {
 
     /// @notice Redeems shares instantly using Permit2 signature-based transfer
     /// @dev    This function allows immediate redemption of shares using Permit2 SignatureTransfer for gasless token approvals.
-    ///         Reference: https://docs.uniswap.org/contracts/permit2/reference/signature-transfer
     /// @param  _shares         uint256            The number of shares to redeem instantly
     /// @param  _receiver       address            The address to which the assets will be sent
     /// @param  _owner          address            The owner of the shares being redeemed

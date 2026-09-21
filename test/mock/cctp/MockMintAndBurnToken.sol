@@ -15,7 +15,7 @@
  */
 pragma solidity ^0.8.30;
 
-import "contracts/interfaces/vendor/cctp/IMintBurnToken.sol";
+import "contracts/vendor/cctp/interfaces/IMintBurnToken.sol";
 
 contract MockMintBurnToken is IMintBurnToken {
     uint256 internal _totalSupply = 0;

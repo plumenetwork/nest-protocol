@@ -7,12 +7,12 @@ import {Id, Market, MarketParams, Position} from "@morpho/interfaces/IMorpho.sol
 import {ORACLE_PRICE_SCALE} from "@morpho/libraries/ConstantsLib.sol";
 import {MarketParamsLib} from "@morpho/libraries/MarketParamsLib.sol";
 import {Call} from "contracts/vendor/bundler3/interfaces/IBundler3.sol";
-import {PredicateMessage} from "@predicate/src/interfaces/IPredicateClient.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {NestBundler} from "contracts/morpho/NestBundler.sol";
-import {Bundle, PositionMode, RouteInput, UserIntent} from "contracts/morpho/types/BundleTypes.sol";
-import {NestBundleErrors} from "contracts/morpho/types/Errors.sol";
+import {NestBundler} from "contracts/integrations/morpho/NestBundler.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {Bundle, PositionMode, RouteInput, UserIntent} from "contracts/integrations/morpho/types/BundleTypes.sol";
+import {NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 
 contract MockMorphoForNestBundler {
@@ -47,11 +47,12 @@ contract NestBundlerTest is Test {
     address internal constant VAULT = address(0x1001);
     address internal constant TELLER = address(0x1002);
     address internal constant ADAPTER = address(0x1003);
-    address internal constant PREDICATE_PROXY = address(0x1004);
+    address internal constant COMPLIANCE_PROXY = address(0x1004);
     address internal constant LEGACY_PREDICATE_PROXY = address(0x1005);
     address internal constant ATOMIC_SOLVER = address(0x1006);
     address internal constant ATOMIC_QUEUE = address(0x1007);
     address internal constant ACCOUNTANT = address(0x1008);
+    address internal constant VAULT_AUTHORITY = address(0x1009);
 
     address internal constant LOAN_TOKEN = address(0x2001);
     address internal constant COLLATERAL_TOKEN = address(0x2002);
@@ -101,7 +102,7 @@ contract NestBundlerTest is Test {
             address(morpho),
             address(bundler3),
             ADAPTER,
-            PREDICATE_PROXY,
+            COMPLIANCE_PROXY,
             LEGACY_PREDICATE_PROXY,
             ATOMIC_SOLVER,
             ATOMIC_QUEUE
@@ -120,7 +121,7 @@ contract NestBundlerTest is Test {
             )
         );
         bundler.getBundle(
-            _targetIntent(0, 1), _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user
+            _targetIntent(0, 1), _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user
         );
     }
 
@@ -132,7 +133,7 @@ contract NestBundlerTest is Test {
             abi.encodeWithSelector(NestBundleErrors.MarketLoanTokenMustEqualVaultAsset.selector, LOAN_TOKEN, wrongAsset)
         );
         bundler.getBundle(
-            _targetIntent(0, 1), _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user
+            _targetIntent(0, 1), _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user
         );
     }
 
@@ -142,18 +143,58 @@ contract NestBundlerTest is Test {
 
         vm.prank(user);
         Call[] memory calls =
-            bundler.getBundleAndExecute(intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER);
+            bundler.getBundleAndExecute(intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER);
 
         assertEq(calls.length, 2, "withdraw-only delta should build withdraw + sweep");
+    }
+
+    function test_getBundleAndExecuteDeposit_bindsMsgSenderAsOnBehalf() external {
+        _mockVaultAndTokenState(user, 1, 0);
+        morpho.setPosition(marketId, user, 0, 0);
+        vm.mockCall(VAULT, abi.encodeWithSignature("previewMint(uint256)", 1), abi.encode(uint256(1)));
+        vm.mockCall(VAULT, abi.encodeWithSignature("authority()"), abi.encode(VAULT_AUTHORITY));
+        vm.mockCall(
+            VAULT_AUTHORITY,
+            abi.encodeWithSignature(
+                "canCall(address,address,bytes4)", COMPLIANCE_PROXY, VAULT, bytes4(keccak256("mint(uint256,address)"))
+            ),
+            abi.encode(true)
+        );
+        vm.mockCall(
+            LOAN_TOKEN,
+            abi.encodeWithSelector(IERC20.transferFrom.selector, user, address(bundler), 1),
+            abi.encode(true)
+        );
+        vm.mockCall(LOAN_TOKEN, abi.encodeWithSelector(IERC20.approve.selector, ADAPTER, 1), abi.encode(true));
+        vm.mockCall(LOAN_TOKEN, abi.encodeWithSelector(IERC20.approve.selector, ADAPTER, 0), abi.encode(true));
+
+        vm.prank(user);
+        Call[] memory calls = bundler.getBundleAndExecute(
+            _targetIntent(0, 1), _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER
+        );
+
+        bool foundComplianceMint;
+        bytes32 onBehalf;
+        for (uint256 i; i < calls.length; ++i) {
+            if (_selector(calls[i].data) == NestAdapter.nestComplianceMint.selector) {
+                (,,,,, onBehalf,) = abi.decode(
+                    _stripSelector(calls[i].data), (address, address, uint256, uint256, address, bytes32, bytes)
+                );
+                foundComplianceMint = true;
+                break;
+            }
+        }
+
+        assertTrue(foundComplianceMint, "compliance mint should be present");
+        assertEq(onBehalf, bytes32(uint256(uint160(user))), "msg.sender should be encoded as onBehalf");
     }
 
     function test_getBundleCalls_returnsNoApprovals_whenNoPulls() external {
         UserIntent memory intent = _deltaIntent(0, 0, 0, 1);
         morpho.setPosition(marketId, user, 0, 1);
 
-        (Call[] memory calls, Call[] memory approvalTxs) = bundler.getBundleCalls(
-            intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user
-        );
+        (Call[] memory calls, Call[] memory approvalTxs) =
+            bundler.getBundleCalls(intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user);
 
         assertEq(calls.length, 2, "withdraw-only delta should build withdraw + sweep");
         assertEq(approvalTxs.length, 0, "no pull path should not require approvals");
@@ -164,9 +205,8 @@ contract NestBundlerTest is Test {
         morpho.setPosition(marketId, user, 0, 0);
         UserIntent memory intent = _targetIntent(0, 2);
 
-        (Call[] memory calls, Call[] memory approvalTxs) = bundler.getBundleCalls(
-            intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user
-        );
+        (Call[] memory calls, Call[] memory approvalTxs) =
+            bundler.getBundleCalls(intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user);
 
         assertEq(calls.length, 3, "expected pullShares + supplyCollateral + sweep");
         assertEq(approvalTxs.length, 1, "expected one collateral approval");
@@ -186,7 +226,7 @@ contract NestBundlerTest is Test {
         route.legacyRedemption = true;
 
         (Call[] memory calls, Call[] memory approvalTxs) =
-            bundler.getBundleCalls(intent, route, _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user);
+            bundler.getBundleCalls(intent, route, _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user);
 
         assertEq(calls.length, 2, "expected flash-loan wrapped callback bundle + sweep");
         assertEq(approvalTxs.length, 1, "legacy redemption should include loan approval");
@@ -211,7 +251,7 @@ contract NestBundlerTest is Test {
         route.legacyRedemption = true;
 
         (Call[] memory calls,) =
-            bundler.getBundleCalls(intent, route, _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user);
+            bundler.getBundleCalls(intent, route, _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user);
 
         assertEq(calls.length, 2, "expected flash-loan wrapped callback bundle + sweep");
         (,, bytes memory callbackData) = abi.decode(_stripSelector(calls[0].data), (address, uint256, bytes));
@@ -243,9 +283,9 @@ contract NestBundlerTest is Test {
 
         UserIntent memory intent = _targetIntent(20, 50);
         Bundle memory syncBaseBundle =
-            bundler.getSyncBundle(intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user);
+            bundler.getSyncBundle(intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user);
         Bundle memory asyncBaseBundle = bundler.getAsyncBundle(
-            intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, solver
+            intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, solver
         );
 
         (Call[] memory syncCalls, Call[] memory syncApprovalTxs) = bundler.getSyncBundleCalls(syncBaseBundle);
@@ -317,9 +357,9 @@ contract NestBundlerTest is Test {
 
         UserIntent memory intent = _targetIntent(50, 50);
         Bundle memory syncBaseBundle =
-            bundler.getSyncBundle(intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user);
+            bundler.getSyncBundle(intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user);
         Bundle memory asyncBaseBundle = bundler.getAsyncBundle(
-            intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, solver
+            intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, solver
         );
 
         (Call[] memory syncCalls, Call[] memory syncApprovalTxs) = bundler.getSyncBundleCalls(syncBaseBundle);
@@ -342,9 +382,8 @@ contract NestBundlerTest is Test {
 
         UserIntent memory intent = _targetIntent(0, 0); // full exit
 
-        (Call[] memory calls, Call[] memory approvalTxs) = bundler.getBundleCalls(
-            intent, _route(), _emptyPredicateMessage(), INestVaultCore(VAULT), TELLER, user, user
-        );
+        (Call[] memory calls, Call[] memory approvalTxs) =
+            bundler.getBundleCalls(intent, _route(), _emptyComplianceData(), INestVaultCore(VAULT), TELLER, user, user);
 
         assertEq(approvalTxs.length, 0, "redeem-funded deleverage needs no owner approvals");
         assertEq(calls.length, 3, "two flash loans + sweep");
@@ -402,10 +441,8 @@ contract NestBundlerTest is Test {
         route.instantRedeem = false;
     }
 
-    function _emptyPredicateMessage() internal pure returns (PredicateMessage memory predicateMessage) {
-        predicateMessage = PredicateMessage({
-            taskId: "", expireByTime: type(uint256).max, signerAddresses: new address[](0), signatures: new bytes[](0)
-        });
+    function _emptyComplianceData() internal pure returns (bytes memory) {
+        return bytes("");
     }
 
     function _selector(bytes memory data) internal pure returns (bytes4 sel) {

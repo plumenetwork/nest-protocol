@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {OFTUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {AuthUpgradeable} from "contracts/upgradeable/auth/AuthUpgradeable.sol";
+import {AuthUpgradeable} from "contracts/auth/AuthUpgradeable.sol";
 import {Authority} from "@solmate/auth/Auth.sol";
 
 /// @dev Legacy implementation used to simulate pre-permit upgrade behavior in tests.

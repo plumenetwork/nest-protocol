@@ -1,4 +1,4 @@
-import { fetchMint, fetchToken, findAssociatedTokenPda } from '@metaplex-foundation/mpl-toolbox'
+import { createAssociatedToken, fetchMint, findAssociatedTokenPda, safeFetchToken } from '@metaplex-foundation/mpl-toolbox'
 import { publicKey, transactionBuilder } from '@metaplex-foundation/umi'
 import { fromWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
@@ -57,6 +57,9 @@ export async function sendSolana({
     addressLookupTables,
     redeemType
 }: SolanaArgs): Promise<SendResult> {
+    const zeroAmountRedeemTypes = new Set(['finish-redeem', 'update-redeem-request', 'finish-withdraw'])
+    const usesZeroAmount = redeemType != null && zeroAmountRedeemTypes.has(redeemType)
+
     // 1️⃣ RPC + UMI
     const { connection, umi, umiWalletSigner } = await deriveConnection(srcEid)
     silenceSolana429(connection)
@@ -88,17 +91,32 @@ export async function sendSolana({
         tokenProgramId,
     })
     if (!tokenAccount) throw new Error(`No token account for mint ${mintPk}`)
-    const balance = (await fetchToken(umi, tokenAccount)).amount
+
+    let balance: bigint
+    const existingTokenAccount = await safeFetchToken(umi, tokenAccount)
+    if (!existingTokenAccount) {
+        logger.info(`ATA ${tokenAccount[0]} missing for mint ${mintPk.toBase58()}, creating...`)
+        await createAssociatedToken(umi, {
+            ata: tokenAccount,
+            owner: umiWalletSigner.publicKey,
+            mint: fromWeb3JsPublicKey(mintPk),
+            tokenProgram: tokenProgramId,
+        }).sendAndConfirm(umi)
+        logger.info(`ATA created: ${tokenAccount[0]}`)
+        balance = 0n
+    } else {
+        balance = existingTokenAccount.amount
+    }
 
     // 5️⃣ Normalize human→base units
     const decimals = (await fetchMint(umi, fromWeb3JsPublicKey(mintPk))).decimals
     let amountUnits = parseDecimalToUnits(amount, decimals)
-    if (redeemType !== 'finish-redeem' && redeemType !== 'update-redeem-request' && redeemType !== 'finish-withdraw') {
+    if (!usesZeroAmount) {
         if (amountUnits === 0n || amountUnits > balance) {
             throw new Error(`Insufficient balance (need ${amountUnits}, have ${balance})`)
         }
     } else {
-        amountUnits = 0n;
+        amountUnits = 0n
     }
 
     // Check whether there are extra options or enforced options. If not, warn the user.
@@ -132,8 +150,8 @@ export async function sendSolana({
     const sendParam = {
         dstEid,
         to: Buffer.from(addressToBytes32(to)),
-        amountLd: redeemType === 'finish-redeem' || redeemType === 'update-request' || redeemType === 'finish-withdraw' ? 0n : amountUnits,
-        minAmountLd: redeemType === 'finish-redeem' || redeemType === 'update-request' || redeemType === 'finish-withdraw' ? 0n : minAmount ? parseDecimalToUnits(minAmount, decimals) : amountUnits,
+        amountLd: usesZeroAmount ? 0n : amountUnits,
+        minAmountLd: usesZeroAmount ? 0n : minAmount ? parseDecimalToUnits(minAmount, decimals) : amountUnits,
         options: extraOptions ? Buffer.from(extraOptions.replace(/^0x/, ''), 'hex') : undefined,
         composeMsg: composeMsg ? Buffer.from(composeMsg.replace(/^0x/, ''), 'hex') : undefined,
     }

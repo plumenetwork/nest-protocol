@@ -7,8 +7,8 @@ import { makeBytes32 } from '@layerzerolabs/devtools'
 import { createGetHreByEid } from '@layerzerolabs/devtools-evm-hardhat'
 import { createLogger, promptToContinue } from '@layerzerolabs/io-devtools'
 import { ChainType, endpointIdToChainType, endpointIdToNetwork } from '@layerzerolabs/lz-definitions'
+import type { OmniPointHardhat } from '@layerzerolabs/toolbox-hardhat'
 
-import layerzeroConfig from '../../script/nTEST_USDC-solana-layerzero.config'
 import { SendResult } from '../common/types'
 import { DebugLogger, KnownErrors, MSG_TYPE, isEmptyOptionsEvm } from '../common/utils'
 import { getLayerZeroScanLink } from '../solana'
@@ -47,7 +47,12 @@ export async function sendEvm(
     if (oftAddress) {
         wrapperAddress = oftAddress
     } else {
-        const { contracts } = typeof layerzeroConfig === 'function' ? await layerzeroConfig() : layerzeroConfig
+        // Lazy load: pulling the config in eagerly would make every hardhat task depend on
+        // the per-vault config/deployment files existing.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const layerzeroConfig = require('../../script/solana-layerzero.config').default
+        const { contracts }: { contracts: { contract: OmniPointHardhat }[] } =
+            typeof layerzeroConfig === 'function' ? await layerzeroConfig() : layerzeroConfig
         const wrapper = contracts.find((c) => c.contract.eid === srcEid)
         if (!wrapper) throw new Error(`No config for EID ${srcEid}`)
         wrapperAddress = wrapper.contract.contractName

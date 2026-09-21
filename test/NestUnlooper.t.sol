@@ -18,12 +18,12 @@ import {TellerWithMultiAssetSupport} from "@boring-vault/src/base/Roles/TellerWi
 
 import {INestVaultCore} from "contracts/interfaces/INestVaultCore.sol";
 import {GeneralAdapter1} from "contracts/vendor/morpho/GeneralAdapter1.sol";
-import {NestAdapter} from "contracts/morpho/NestAdapter.sol";
-import {MorphoAdapter} from "contracts/morpho/MorphoAdapter.sol";
-import {NestUnlooper} from "contracts/morpho/NestUnlooper.sol";
-import {NestUnlooperErrors, NestBundleErrors} from "contracts/morpho/types/Errors.sol";
-import {Bundle} from "contracts/morpho/types/BundleTypes.sol";
-import {NestShareMathLib} from "contracts/morpho/libraries/NestShareMathLib.sol";
+import {NestAdapter} from "contracts/integrations/morpho/NestAdapter.sol";
+import {MorphoAdapter} from "contracts/integrations/morpho/MorphoAdapter.sol";
+import {NestUnlooper} from "contracts/integrations/morpho/NestUnlooper.sol";
+import {NestUnlooperErrors, NestBundleErrors} from "contracts/integrations/morpho/types/Errors.sol";
+import {Bundle} from "contracts/integrations/morpho/types/BundleTypes.sol";
+import {NestShareMathLib} from "contracts/integrations/morpho/libraries/NestShareMathLib.sol";
 
 contract MockMorphoForAsyncUnloop {
     mapping(bytes32 => MorphoPosition) internal _positions;
