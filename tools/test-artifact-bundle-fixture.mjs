@@ -73,7 +73,7 @@ const solDep = (mint) => ({
 });
 
 try {
-  writeFileSync(join(ROOT, 'license.md'), readFileSync(new URL('../license.md', import.meta.url)));
+  writeFileSync(join(ROOT, 'LICENSE'), readFileSync(new URL('../LICENSE', import.meta.url)));
   // ── fixture root: shared verify source + grammar + Solana deployments ─────
   mkdirSync(join(ROOT, 'src'), { recursive: true });
   writeFileSync(join(ROOT, 'src', 'Fixture.sol'), '// fixture source\n');

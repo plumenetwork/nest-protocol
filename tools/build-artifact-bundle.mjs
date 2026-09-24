@@ -249,7 +249,7 @@ const bundle = {
 };
 
 mkdirSync(DIST, { recursive: true });
-copyFileSync(join(ROOT, 'license.md'), join(DIST, 'license.md'));
+copyFileSync(join(ROOT, 'LICENSE'), join(DIST, 'LICENSE'));
 writeFileSync(join(DIST, GRAMMAR_FILE), grammarText);
 writeFileSync(join(DIST, 'bundle.json'), JSON.stringify(bundle));
 writeFileSync(join(DIST, 'index.js'), "module.exports = require('./bundle.json');\n");
