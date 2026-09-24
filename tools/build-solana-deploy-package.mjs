@@ -126,7 +126,7 @@ const REQUIRED_TASK_FILES = [
 // excluded: contracts/, script/**/*.sol, script/vendor/, test/, tools/,
 // programs/, and Anchor/Cargo/foundry files.
 const VERBATIM_FILES = [
-  'license.md',
+  'LICENSE',
   'hardhat.config.ts',                 // entry point; imports ./tasks/index
   'tsconfig.json',                     // hardhat self-registers ts-node against it
   'script/solana-layerzero.config.ts', // SOLANA_OAPP_CONFIG — also imported by tasks/evm/sendEvm.ts
