@@ -122,7 +122,160 @@ contract DeployConfigParseTest is Test {
                 checked++;
             }
         }
-        assertEq(checked, 18, "unexpected number of base asset overrides checked");
+        // PDE-975 removed the Plasma (9745) USDT overrides for nTBILL, nACRDX, and nOPAL.
+        assertEq(checked, 15, "unexpected number of base asset overrides checked");
+    }
+
+    /// @dev Phase 0 retired Plasma for the zero-supply vaults. Their deploy configs must not
+    ///      target chain 9745; other vaults and the shared Plasma chain files stay in place.
+    function test_phase0VaultsOmitPlasma() public view {
+        string[3] memory symbols = ["nTBILL", "nACRDX", "nOPAL"];
+        for (uint256 i = 0; i < symbols.length; i++) {
+            string memory vaultJson =
+                vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/", symbols[i], ".json"));
+            assertFalse(vm.keyExistsJson(vaultJson, ".baseAssetOverrides.9745"), symbols[i]);
+            _assertChainAbsent(vm.parseJsonUintArray(vaultJson, ".peers"), symbols[i]);
+            if (vm.keyExistsJson(vaultJson, ".peerOverrides")) {
+                string[] memory keys = vm.parseJsonKeys(vaultJson, ".peerOverrides");
+                for (uint256 k = 0; k < keys.length; k++) {
+                    _assertChainAbsent(
+                        vm.parseJsonUintArray(vaultJson, string.concat(".peerOverrides.", keys[k])), symbols[i]
+                    );
+                }
+            }
+            for (
+                uint256 v = 0;
+                vm.keyExistsJson(vaultJson, string.concat(".contracts.vaults[", vm.toString(v), "].chains"));
+                v++
+            ) {
+                _assertChainAbsent(
+                    vm.parseJsonUintArray(vaultJson, string.concat(".contracts.vaults[", vm.toString(v), "].chains")),
+                    symbols[i]
+                );
+            }
+        }
+    }
+
+    /// @dev Phase 0 drops Plasma from the per-vault indexes for the retired symbols. Indexes for
+    ///      vaults that still deploy on Plasma, and the generic chain-id-to-eid map, stay.
+    function test_phase0IndexesOmitPlasma() public view {
+        string memory chainsJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-chains.json"));
+        string memory peersJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-peers.json"));
+
+        string[3] memory retired = ["nTBILL", "nACRDX", "nOPAL"];
+        for (uint256 i = 0; i < retired.length; i++) {
+            _assertIdAbsent(vm.parseJsonUintArray(chainsJson, string.concat(".", retired[i])), 9745, retired[i]);
+            _assertIdAbsent(
+                vm.parseJsonUintArray(peersJson, string.concat(".", retired[i], ".eids")), 30383, retired[i]
+            );
+        }
+
+        string[6] memory live = ["nALPHA", "nBASIS", "nCREDIT", "nINSTO", "nWISDOM", "nGPRIME"];
+        for (uint256 i = 0; i < live.length; i++) {
+            _assertIdPresent(vm.parseJsonUintArray(chainsJson, string.concat(".", live[i])), 9745, live[i]);
+            _assertIdPresent(vm.parseJsonUintArray(peersJson, string.concat(".", live[i], ".eids")), 30383, live[i]);
+        }
+        assertEq(vm.parseJsonUint(peersJson, "._chainIdToEid[\"9745 (Plasma)\"]"), 30383, "generic Plasma eid map");
+
+        string[2] memory lzRetired = ["nTBILL", "nOPAL"];
+        for (uint256 i = 0; i < lzRetired.length; i++) {
+            string memory lzJson =
+                vm.readFile(string.concat(vm.projectRoot(), "/config/layerzero/vaults/", lzRetired[i], ".json"));
+            _assertJsonEidAbsent(lzJson, ".contracts", ".contract.eid", 30383, lzRetired[i]);
+            _assertJsonEidAbsent(lzJson, ".connections", ".from.eid", 30383, lzRetired[i]);
+            _assertJsonEidAbsent(lzJson, ".connections", ".to.eid", 30383, lzRetired[i]);
+        }
+
+        string[3] memory lzLive = ["nALPHA", "nBASIS", "nWISDOM"];
+        for (uint256 i = 0; i < lzLive.length; i++) {
+            string memory lzJson =
+                vm.readFile(string.concat(vm.projectRoot(), "/config/layerzero/vaults/", lzLive[i], ".json"));
+            assertGt(_countJsonEid(lzJson, ".contracts", ".contract.eid", 30383), 0, lzLive[i]);
+        }
+    }
+
+    /// @dev PDE-976 retired nTBILL on Arbitrum. No other vault lists chain 42161 or eid 30110, so the
+    ///      generic map entry goes with it. Shared Arbitrum chain files stay.
+    function test_ntbillOmitsArbitrum() public view {
+        string memory ntbill =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/nTBILL.json"));
+        _assertIdAbsent(vm.parseJsonUintArray(ntbill, ".peers"), 42161, "nTBILL peers");
+        for (
+            uint256 v = 0;
+            vm.keyExistsJson(ntbill, string.concat(".contracts.vaults[", vm.toString(v), "].chains"));
+            v++
+        ) {
+            _assertIdAbsent(
+                vm.parseJsonUintArray(ntbill, string.concat(".contracts.vaults[", vm.toString(v), "].chains")),
+                42161,
+                "nTBILL"
+            );
+        }
+
+        string memory chainsJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-chains.json"));
+        string memory peersJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-peers.json"));
+        assertFalse(vm.keyExistsJson(peersJson, "._chainIdToEid[\"42161 (Arbitrum)\"]"), "arbitrum eid map");
+
+        string[] memory chainSymbols = vm.parseJsonKeys(chainsJson, ".");
+        for (uint256 i = 0; i < chainSymbols.length; i++) {
+            if (keccak256(bytes(chainSymbols[i])) == keccak256("_note")) continue;
+            _assertIdAbsent(
+                vm.parseJsonUintArray(chainsJson, string.concat(".", chainSymbols[i])), 42161, chainSymbols[i]
+            );
+        }
+
+        string[] memory peerKeys = vm.parseJsonKeys(peersJson, ".");
+        for (uint256 i = 0; i < peerKeys.length; i++) {
+            string memory eidsKey = string.concat(".", peerKeys[i], ".eids");
+            if (!vm.keyExistsJson(peersJson, eidsKey)) continue;
+            _assertIdAbsent(vm.parseJsonUintArray(peersJson, eidsKey), 30110, peerKeys[i]);
+        }
+
+        string memory lzJson = vm.readFile(string.concat(vm.projectRoot(), "/config/layerzero/vaults/nTBILL.json"));
+        _assertJsonEidAbsent(lzJson, ".contracts", ".contract.eid", 30110, "nTBILL lz");
+        _assertJsonEidAbsent(lzJson, ".connections", ".from.eid", 30110, "nTBILL lz");
+        _assertJsonEidAbsent(lzJson, ".connections", ".to.eid", 30110, "nTBILL lz");
+    }
+
+    function _assertChainAbsent(uint256[] memory chainIds, string memory symbol) internal pure {
+        _assertIdAbsent(chainIds, 9745, symbol);
+    }
+
+    function _assertIdAbsent(uint256[] memory ids, uint256 banned, string memory label) internal pure {
+        for (uint256 i = 0; i < ids.length; i++) {
+            assertTrue(ids[i] != banned, label);
+        }
+    }
+
+    function _assertIdPresent(uint256[] memory ids, uint256 required, string memory label) internal pure {
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (ids[i] == required) return;
+        }
+        assertTrue(false, label);
+    }
+
+    function _assertJsonEidAbsent(
+        string memory json,
+        string memory arrayPath,
+        string memory eidSuffix,
+        uint256 banned,
+        string memory label
+    ) internal view {
+        assertEq(_countJsonEid(json, arrayPath, eidSuffix, banned), 0, label);
+    }
+
+    function _countJsonEid(string memory json, string memory arrayPath, string memory eidSuffix, uint256 eid)
+        internal
+        view
+        returns (uint256 count)
+    {
+        for (uint256 i = 0; vm.keyExistsJson(json, string.concat(arrayPath, "[", vm.toString(i), "]", eidSuffix)); i++) {
+            if (vm.parseJsonUint(json, string.concat(arrayPath, "[", vm.toString(i), "]", eidSuffix)) == eid) count++;
+        }
     }
 
     function test_topLevelOwner_isRequiredAndNonZero() public {

@@ -3,7 +3,7 @@
   "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
   "name": "Nest Apollo ACRDX Vault",
   "baseAssetSymbol": "USDC",
-  "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
+  "baseAssetOverrides": { "56": "USDT" },
   "vaultType": "NestVaultOFT",
   "accountantType": "NestHubAccountant",
 
@@ -30,7 +30,7 @@
       },
       {
         "assetSymbol": "USDT",
-        "chains": [9745, 56],
+        "chains": [56],
         "address": "0xba1dD0Dc2510A5cCFb1ABb97725F0c50dF95fAAe",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000",
@@ -111,5 +111,5 @@
     ]
   },
 
-  "peers": [98866, 1, 9745, 56]
+  "peers": [98866, 1, 56]
 }
