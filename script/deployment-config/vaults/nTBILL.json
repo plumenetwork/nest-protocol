@@ -3,7 +3,7 @@
   "owner": "0x8fAACdC65de5D78975dF4f9DC4B6548979cEb23A",
   "name": "Nest Treasuries Vault",
   "baseAssetSymbol": "USDC",
-  "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
+  "baseAssetOverrides": { "56": "USDT" },
   "vaultType": "NestVaultOFT",
   "accountantType": "NestHubAccountant",
   "vaultTypeOverrides": {
@@ -33,7 +33,7 @@
       },
       {
         "assetSymbol": "USDT",
-        "chains": [9745, 56],
+        "chains": [56],
         "address": "0x109DF814e265cB62a1b366A4C0450B0a7af38a0C",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000",
@@ -117,5 +117,5 @@
     "NestVaultOFT-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00ac6fc42d9d5ebeab6435d6",
     "NestVaultComposer-USDC": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e000afee4032dcf34ae9ed33a" 
   },
-  "peers": [98866, 1, 9745, 56, 480, 101]
+  "peers": [98866, 1, 56, 480, 101]
 }

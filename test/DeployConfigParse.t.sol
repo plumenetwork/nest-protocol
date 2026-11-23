@@ -122,7 +122,44 @@ contract DeployConfigParseTest is Test {
                 checked++;
             }
         }
-        assertEq(checked, 18, "unexpected number of base asset overrides checked");
+        // PDE-975 removed the Plasma (9745) USDT overrides for nTBILL, nACRDX, and nOPAL.
+        assertEq(checked, 15, "unexpected number of base asset overrides checked");
+    }
+
+    /// @dev Phase 0 retired Plasma for the zero-supply vaults. Their deploy configs must not
+    ///      target chain 9745; other vaults and the shared Plasma chain files stay in place.
+    function test_phase0VaultsOmitPlasma() public view {
+        string[3] memory symbols = ["nTBILL", "nACRDX", "nOPAL"];
+        for (uint256 i = 0; i < symbols.length; i++) {
+            string memory vaultJson =
+                vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/", symbols[i], ".json"));
+            assertFalse(vm.keyExistsJson(vaultJson, ".baseAssetOverrides.9745"), symbols[i]);
+            _assertChainAbsent(vm.parseJsonUintArray(vaultJson, ".peers"), symbols[i]);
+            if (vm.keyExistsJson(vaultJson, ".peerOverrides")) {
+                string[] memory keys = vm.parseJsonKeys(vaultJson, ".peerOverrides");
+                for (uint256 k = 0; k < keys.length; k++) {
+                    _assertChainAbsent(
+                        vm.parseJsonUintArray(vaultJson, string.concat(".peerOverrides.", keys[k])), symbols[i]
+                    );
+                }
+            }
+            for (
+                uint256 v = 0;
+                vm.keyExistsJson(vaultJson, string.concat(".contracts.vaults[", vm.toString(v), "].chains"));
+                v++
+            ) {
+                _assertChainAbsent(
+                    vm.parseJsonUintArray(vaultJson, string.concat(".contracts.vaults[", vm.toString(v), "].chains")),
+                    symbols[i]
+                );
+            }
+        }
+    }
+
+    function _assertChainAbsent(uint256[] memory chainIds, string memory symbol) internal pure {
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            assertTrue(chainIds[i] != 9745, symbol);
+        }
     }
 
     function test_topLevelOwner_isRequiredAndNonZero() public {

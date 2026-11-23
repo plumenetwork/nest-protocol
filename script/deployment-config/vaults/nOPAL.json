@@ -4,7 +4,7 @@
   "ownerOverrides": { "5042": "0xa08A0Dc480BD60d1d56C8Eec6c722125eAfEa982" },
   "name": "Nest BlackOpal LiquidStone II Vault",
   "baseAssetSymbol": "USDC",
-  "baseAssetOverrides": { "56": "USDT", "9745": "USDT" },
+  "baseAssetOverrides": { "56": "USDT" },
   "vaultType": "NestVaultOFT",
   "accountantType": "NestHubAccountant",
   "vaultTypeOverrides": {
@@ -35,7 +35,7 @@
       },
       {
         "assetSymbol": "USDT",
-        "chains": [1, 9745, 56],
+        "chains": [1, 56],
         "address": "0x5E949FA6401D7c49CDCb48E3A8BdC28F60657A2C",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000",
@@ -123,6 +123,6 @@
     "NestAccountant": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00606075cf8c166b2dd098df",
     "RolesAuthority": "0xc28e1cdfb582953fef53f76c64426c2ac79c716e00732ae99e556a0b07b93dcf"
   },
-  "peerOverrides": { "5042": [98866, 1, 56, 480, 9745, 43114] },
-  "peers": [98866, 1, 56, 480, 9745, 101, 43114, 5042]
+  "peerOverrides": { "5042": [98866, 1, 56, 480, 43114] },
+  "peers": [98866, 1, 56, 480, 101, 43114, 5042]
 }
