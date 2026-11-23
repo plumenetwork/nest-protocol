@@ -1,7 +1,7 @@
 {
   "_note": "Chains each vault's share (Token) row is deployed on, based on populated explorer-link columns in the Nest (Multichain) tab of the Plume Master Smart Contract List. Column E=Plume(98866), F=Ethereum(1), G=Arbitrum(42161), H=Plasma(9745), I=BNB(56), J=World(480).",
   "nALPHA":   [98866, 1, 56, 9745, 480, 101],
-  "nTBILL":   [98866, 1, 42161, 56, 480, 101],
+  "nTBILL":   [98866, 1, 56, 480, 101],
   "nYIELD":   [98866, 1],
   "nUSDY":    [98866, 1],
   "nELIXIR":  [98866, 1],

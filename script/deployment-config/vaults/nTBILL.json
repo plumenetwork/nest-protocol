@@ -16,7 +16,7 @@
     "vaults": [
       {
         "assetSymbol": "USDC",
-        "chains": [98866, 480, 1, 42161],
+        "chains": [98866, 480, 1],
         "address": "0x250c2D14Ed6376fB392FbA1edd2cFd11d2Bf7F12",
         "isPegged": true,
         "rateProvider": "0x0000000000000000000000000000000000000000",

@@ -196,6 +196,51 @@ contract DeployConfigParseTest is Test {
         }
     }
 
+    /// @dev PDE-976 retired nTBILL on Arbitrum. No other vault lists chain 42161 or eid 30110, so the
+    ///      generic map entry goes with it. Shared Arbitrum chain files stay.
+    function test_ntbillOmitsArbitrum() public view {
+        string memory ntbill =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/nTBILL.json"));
+        _assertIdAbsent(vm.parseJsonUintArray(ntbill, ".peers"), 42161, "nTBILL peers");
+        for (
+            uint256 v = 0;
+            vm.keyExistsJson(ntbill, string.concat(".contracts.vaults[", vm.toString(v), "].chains"));
+            v++
+        ) {
+            _assertIdAbsent(
+                vm.parseJsonUintArray(ntbill, string.concat(".contracts.vaults[", vm.toString(v), "].chains")),
+                42161,
+                "nTBILL"
+            );
+        }
+
+        string memory chainsJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-chains.json"));
+        string memory peersJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-peers.json"));
+        assertFalse(vm.keyExistsJson(peersJson, "._chainIdToEid[\"42161 (Arbitrum)\"]"), "arbitrum eid map");
+
+        string[] memory chainSymbols = vm.parseJsonKeys(chainsJson, ".");
+        for (uint256 i = 0; i < chainSymbols.length; i++) {
+            if (keccak256(bytes(chainSymbols[i])) == keccak256("_note")) continue;
+            _assertIdAbsent(
+                vm.parseJsonUintArray(chainsJson, string.concat(".", chainSymbols[i])), 42161, chainSymbols[i]
+            );
+        }
+
+        string[] memory peerKeys = vm.parseJsonKeys(peersJson, ".");
+        for (uint256 i = 0; i < peerKeys.length; i++) {
+            string memory eidsKey = string.concat(".", peerKeys[i], ".eids");
+            if (!vm.keyExistsJson(peersJson, eidsKey)) continue;
+            _assertIdAbsent(vm.parseJsonUintArray(peersJson, eidsKey), 30110, peerKeys[i]);
+        }
+
+        string memory lzJson = vm.readFile(string.concat(vm.projectRoot(), "/config/layerzero/vaults/nTBILL.json"));
+        _assertJsonEidAbsent(lzJson, ".contracts", ".contract.eid", 30110, "nTBILL lz");
+        _assertJsonEidAbsent(lzJson, ".connections", ".from.eid", 30110, "nTBILL lz");
+        _assertJsonEidAbsent(lzJson, ".connections", ".to.eid", 30110, "nTBILL lz");
+    }
+
     function _assertChainAbsent(uint256[] memory chainIds, string memory symbol) internal pure {
         _assertIdAbsent(chainIds, 9745, symbol);
     }
