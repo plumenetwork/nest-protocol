@@ -16,13 +16,6 @@
     },
     {
       "contract": {
-        "eid": 30383,
-        "contractName": "nTBILL",
-        "address": "0x109DF814e265cB62a1b366A4C0450B0a7af38a0C"
-      }
-    },
-    {
-      "contract": {
         "eid": 30102,
         "contractName": "nTBILL",
         "address": "0x109DF814e265cB62a1b366A4C0450B0a7af38a0C"
@@ -100,54 +93,6 @@
         "eid": 30101,
         "contractName": "nTBILL",
         "address": "0x250c2D14Ed6376fB392FbA1edd2cfd11d2Bf7F12"
-      },
-      "config": {
-        "sendLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
-        "receiveLibraryConfig": {
-          "receiveLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",
-          "gracePeriod": "0"
-        },
-        "receiveConfig": {
-          "ulnConfig": {
-            "confirmations": "0",
-            "requiredDVNs": [
-              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
-              "7jMeX5mzXnSSKYd8DxBDP4xMnkNFZZZm5W28FWUTbwU3",
-              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab"
-            ],
-            "requiredDVNCount": 3,
-            "optionalDVNs": [],
-            "optionalDVNThreshold": 0
-          }
-        },
-        "sendConfig": {
-          "executorConfig": {
-            "maxMessageSize": 10000,
-            "executor": "AwrbHeCyniXaQhiJZkLhgWdUCteeWSGaSN1sTfLiY7xK"
-          },
-          "ulnConfig": {
-            "confirmations": "0",
-            "requiredDVNs": [
-              "4VDjp6XQaxoZf5RGwiPU9NR1EXSZn2TP4ATMmiSzLfhb",
-              "7jMeX5mzXnSSKYd8DxBDP4xMnkNFZZZm5W28FWUTbwU3",
-              "GPjyWr8vCotGuFubDpTxDxy9Vj1ZeEN4F2dwRmFiaGab"
-            ],
-            "requiredDVNCount": 3,
-            "optionalDVNs": [],
-            "optionalDVNThreshold": 0
-          }
-        }
-      }
-    },
-    {
-      "from": {
-        "eid": 30168,
-        "address": "5B25A3r4yyN5iGi9PZEyte2ZyZEyx8CdASEX5GQErRSL"
-      },
-      "to": {
-        "eid": 30383,
-        "contractName": "nTBILL",
-        "address": "0x109DF814e265cB62a1b366A4C0450B0a7af38a0C"
       },
       "config": {
         "sendLibrary": "7a4WjyR8VZ7yZz5XJAKm39BUGn5iT9CKcv2pmG9tdXVH",

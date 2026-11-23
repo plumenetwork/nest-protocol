@@ -156,9 +156,80 @@ contract DeployConfigParseTest is Test {
         }
     }
 
+    /// @dev Phase 0 drops Plasma from the per-vault indexes for the retired symbols. Indexes for
+    ///      vaults that still deploy on Plasma, and the generic chain-id-to-eid map, stay.
+    function test_phase0IndexesOmitPlasma() public view {
+        string memory chainsJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-chains.json"));
+        string memory peersJson =
+            vm.readFile(string.concat(vm.projectRoot(), "/script/deployment-config/vaults/vault-peers.json"));
+
+        string[3] memory retired = ["nTBILL", "nACRDX", "nOPAL"];
+        for (uint256 i = 0; i < retired.length; i++) {
+            _assertIdAbsent(vm.parseJsonUintArray(chainsJson, string.concat(".", retired[i])), 9745, retired[i]);
+            _assertIdAbsent(
+                vm.parseJsonUintArray(peersJson, string.concat(".", retired[i], ".eids")), 30383, retired[i]
+            );
+        }
+
+        string[6] memory live = ["nALPHA", "nBASIS", "nCREDIT", "nINSTO", "nWISDOM", "nGPRIME"];
+        for (uint256 i = 0; i < live.length; i++) {
+            _assertIdPresent(vm.parseJsonUintArray(chainsJson, string.concat(".", live[i])), 9745, live[i]);
+            _assertIdPresent(vm.parseJsonUintArray(peersJson, string.concat(".", live[i], ".eids")), 30383, live[i]);
+        }
+        assertEq(vm.parseJsonUint(peersJson, "._chainIdToEid[\"9745 (Plasma)\"]"), 30383, "generic Plasma eid map");
+
+        string[2] memory lzRetired = ["nTBILL", "nOPAL"];
+        for (uint256 i = 0; i < lzRetired.length; i++) {
+            string memory lzJson =
+                vm.readFile(string.concat(vm.projectRoot(), "/config/layerzero/vaults/", lzRetired[i], ".json"));
+            _assertJsonEidAbsent(lzJson, ".contracts", ".contract.eid", 30383, lzRetired[i]);
+            _assertJsonEidAbsent(lzJson, ".connections", ".from.eid", 30383, lzRetired[i]);
+            _assertJsonEidAbsent(lzJson, ".connections", ".to.eid", 30383, lzRetired[i]);
+        }
+
+        string[3] memory lzLive = ["nALPHA", "nBASIS", "nWISDOM"];
+        for (uint256 i = 0; i < lzLive.length; i++) {
+            string memory lzJson =
+                vm.readFile(string.concat(vm.projectRoot(), "/config/layerzero/vaults/", lzLive[i], ".json"));
+            assertGt(_countJsonEid(lzJson, ".contracts", ".contract.eid", 30383), 0, lzLive[i]);
+        }
+    }
+
     function _assertChainAbsent(uint256[] memory chainIds, string memory symbol) internal pure {
-        for (uint256 i = 0; i < chainIds.length; i++) {
-            assertTrue(chainIds[i] != 9745, symbol);
+        _assertIdAbsent(chainIds, 9745, symbol);
+    }
+
+    function _assertIdAbsent(uint256[] memory ids, uint256 banned, string memory label) internal pure {
+        for (uint256 i = 0; i < ids.length; i++) {
+            assertTrue(ids[i] != banned, label);
+        }
+    }
+
+    function _assertIdPresent(uint256[] memory ids, uint256 required, string memory label) internal pure {
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (ids[i] == required) return;
+        }
+        assertTrue(false, label);
+    }
+
+    function _assertJsonEidAbsent(
+        string memory json,
+        string memory arrayPath,
+        string memory eidSuffix,
+        uint256 banned,
+        string memory label
+    ) internal view {
+        assertEq(_countJsonEid(json, arrayPath, eidSuffix, banned), 0, label);
+    }
+
+    function _countJsonEid(string memory json, string memory arrayPath, string memory eidSuffix, uint256 eid)
+        internal
+        view
+        returns (uint256 count)
+    {
+        for (uint256 i = 0; vm.keyExistsJson(json, string.concat(arrayPath, "[", vm.toString(i), "]", eidSuffix)); i++) {
+            if (vm.parseJsonUint(json, string.concat(arrayPath, "[", vm.toString(i), "]", eidSuffix)) == eid) count++;
         }
     }
 
